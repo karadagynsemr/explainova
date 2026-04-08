@@ -1,12 +1,11 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import LabelEncoder
+
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 
 def is_id_column(column_name):
-    """
-    Sütun adı gerçekten ID benzeri mi diye bakar.
-    """
     col = column_name.strip().lower()
 
     exact_matches = {
@@ -24,9 +23,6 @@ def is_id_column(column_name):
 
 
 def try_convert_object_to_numeric(df, target_column, conversion_threshold=0.80):
-    """
-    Object sütunları mümkünse numeriğe çevirmeyi dener.
-    """
     data = df.copy()
     converted_columns = []
 
@@ -49,9 +45,6 @@ def try_convert_object_to_numeric(df, target_column, conversion_threshold=0.80):
 
 
 def is_datetime_candidate(column_name):
-    """
-    Sütun adı datetime adayı mı?
-    """
     col = column_name.strip().lower()
 
     datetime_keywords = [
@@ -63,10 +56,6 @@ def is_datetime_candidate(column_name):
 
 
 def try_parse_datetime_columns(df, target_column, parse_threshold=0.80):
-    """
-    Datetime gibi görünen sütunları parse etmeyi dener.
-    Başarılı olanları parçalar ve orijinal sütunu kaldırır.
-    """
     data = df.copy()
 
     parsed_datetime_columns = []
@@ -80,7 +69,6 @@ def try_parse_datetime_columns(df, target_column, parse_threshold=0.80):
 
         should_try = is_datetime_candidate(col)
 
-        # isim güçlü ipucu vermiyorsa yine de dene ama daha dikkatli
         parsed = pd.to_datetime(data[col], errors="coerce")
 
         original_non_null = data[col].notnull().sum()
@@ -104,7 +92,6 @@ def try_parse_datetime_columns(df, target_column, parse_threshold=0.80):
                 f"{col}_dayofweek"
             ])
 
-            # saat bilgisi gerçekten varsa ekleyelim
             if parsed.dt.hour.nunique(dropna=True) > 1:
                 data[f"{col}_hour"] = parsed.dt.hour
                 created_datetime_features.append(f"{col}_hour")
@@ -143,6 +130,34 @@ def detect_ordinal_columns(df, categorical_cols):
                 break
 
     return ordinal_columns
+
+
+def suggest_ordinal_columns(df, target_column):
+    data = df.copy()
+
+    if target_column not in data.columns:
+        return {
+            "auto_detected_ordinal_columns": [],
+            "categorical_columns": [],
+            "ordinal_mappings_found": {}
+        }
+
+    data, _, _ = try_parse_datetime_columns(data, target_column=target_column)
+    data, _ = try_convert_object_to_numeric(data, target_column=target_column)
+
+    if target_column in data.columns:
+        X = data.drop(columns=[target_column]).copy()
+    else:
+        X = data.copy()
+
+    categorical_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+    ordinal_mappings = detect_ordinal_columns(X, categorical_cols)
+
+    return {
+        "auto_detected_ordinal_columns": list(ordinal_mappings.keys()),
+        "categorical_columns": categorical_cols,
+        "ordinal_mappings_found": ordinal_mappings
+    }
 
 
 def encode_ordinal_columns(df, ordinal_columns):
@@ -237,6 +252,38 @@ def is_high_cardinality(series, unique_count_threshold=20, unique_ratio_threshol
     return (unique_count > unique_count_threshold) and (unique_ratio > unique_ratio_threshold)
 
 
+def apply_pca_to_features(X, variance_threshold=0.95):
+    if X.empty:
+        return X.copy(), {
+            "pca_applied": False,
+            "original_feature_count": 0,
+            "reduced_feature_count": 0,
+            "selected_n_components": 0,
+            "explained_variance_ratio_sum": 0.0,
+            "scaled_before_pca": False
+        }
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    pca = PCA(n_components=variance_threshold)
+    X_pca = pca.fit_transform(X_scaled)
+
+    pca_columns = [f"PC{i+1}" for i in range(X_pca.shape[1])]
+    X_pca_df = pd.DataFrame(X_pca, columns=pca_columns, index=X.index)
+
+    pca_report = {
+        "pca_applied": True,
+        "original_feature_count": int(X.shape[1]),
+        "reduced_feature_count": int(X_pca_df.shape[1]),
+        "selected_n_components": int(X_pca_df.shape[1]),
+        "explained_variance_ratio_sum": float(np.sum(pca.explained_variance_ratio_)),
+        "scaled_before_pca": True
+    }
+
+    return X_pca_df, pca_report
+
+
 def preprocess_data(
         df,
         target_column,
@@ -246,9 +293,13 @@ def preprocess_data(
         high_cardinality_unique_ratio=0.10,
         object_to_numeric_threshold=0.80,
         datetime_parse_threshold=0.80,
-        extreme_outlier_multiplier=3.0
+        extreme_outlier_multiplier=3.0,
+        user_selected_ordinal_columns=None,
+        apply_pca=False,
+        pca_variance_threshold=0.95
 ):
     data = df.copy()
+    user_selected_ordinal_columns = user_selected_ordinal_columns or []
 
     report = {
         "initial_shape": df.shape,
@@ -264,6 +315,9 @@ def preprocess_data(
         "parsed_datetime_columns": [],
         "created_datetime_features": [],
         "ordinal_encoded_columns": [],
+        "auto_detected_ordinal_columns": [],
+        "user_selected_ordinal_columns": [],
+        "failed_user_ordinal_columns": [],
         "one_hot_encoded_columns": [],
         "categorical_columns_before_encoding": [],
         "numerical_columns_before_encoding": [],
@@ -273,28 +327,29 @@ def preprocess_data(
         "target_classes": None,
         "outlier_report": {},
         "extreme_outlier_report": {},
-        "capped_outlier_columns": []
+        "capped_outlier_columns": [],
+        "pca_applied": False,
+        "pca_report": None,
+        "preview_before_pca": None,
+        "columns_before_pca": []
     }
 
     if target_column not in data.columns:
-        raise ValueError(f"Seçilen target sütunu bulunamadı: {target_column}")
+        raise ValueError(f"Target column cannot be found: {target_column}")
 
-    # 1) duplicate
     before_rows = data.shape[0]
     data = data.drop_duplicates()
     after_rows = data.shape[0]
     report["removed_duplicates"] = before_rows - after_rows
 
-    # 2) tamamen boş sütunlar
     empty_columns = data.columns[data.isnull().all()].tolist()
 
     if target_column in empty_columns:
-        raise ValueError("Target sütununun tamamı boş olamaz.")
+        raise ValueError("Target column cannot be empty.")
 
     data = data.drop(columns=empty_columns, errors="ignore")
     report["dropped_empty_columns"] = empty_columns
 
-    # 3) datetime parse
     data, parsed_datetime_columns, created_datetime_features = try_parse_datetime_columns(
         data,
         target_column=target_column,
@@ -303,7 +358,6 @@ def preprocess_data(
     report["parsed_datetime_columns"] = parsed_datetime_columns
     report["created_datetime_features"] = created_datetime_features
 
-    # 4) object -> numeric
     data, converted_columns = try_convert_object_to_numeric(
         data,
         target_column=target_column,
@@ -311,7 +365,6 @@ def preprocess_data(
     )
     report["converted_to_numeric"] = converted_columns
 
-    # 5) çok eksik kolonlar
     high_missing_columns = []
 
     for col in data.columns:
@@ -324,14 +377,12 @@ def preprocess_data(
     data = data.drop(columns=high_missing_columns, errors="ignore")
     report["dropped_high_missing_columns"] = high_missing_columns
 
-    # 6) çok eksik satırlar
     row_missing_ratio = data.isnull().mean(axis=1)
     before_rows = data.shape[0]
     data = data.loc[row_missing_ratio <= missing_row_threshold].copy()
     after_rows = data.shape[0]
     report["removed_rows_due_to_missing"] = before_rows - after_rows
 
-    # 7) tek değerli sütunlar
     single_value_columns = []
 
     for col in data.columns:
@@ -344,23 +395,18 @@ def preprocess_data(
     data = data.drop(columns=single_value_columns, errors="ignore")
     report["dropped_single_value_columns"] = single_value_columns
 
-    # 8) target boş satırlar
     data = data.dropna(subset=[target_column]).copy()
 
-    # 9) target / feature ayır
     y = data[target_column].copy()
     X = data.drop(columns=[target_column]).copy()
 
-    # 10) ID sütunları
     id_columns = [col for col in X.columns if is_id_column(col)]
     X = X.drop(columns=id_columns, errors="ignore")
     report["dropped_id_columns"] = id_columns
 
-    # 11) tip ayır
     categorical_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
     numerical_cols = X.select_dtypes(include=["number"]).columns.tolist()
 
-    # 12) high-cardinality
     high_cardinality_columns = []
 
     for col in categorical_cols:
@@ -374,14 +420,12 @@ def preprocess_data(
     X = X.drop(columns=high_cardinality_columns, errors="ignore")
     report["dropped_high_cardinality_columns"] = high_cardinality_columns
 
-    # tekrar ayır
     categorical_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
     numerical_cols = X.select_dtypes(include=["number"]).columns.tolist()
 
     report["categorical_columns_before_encoding"] = categorical_cols.copy()
     report["numerical_columns_before_encoding"] = numerical_cols.copy()
 
-    # 13) missing doldurma
     for col in numerical_cols:
         if X[col].isnull().sum() > 0:
             X[col] = X[col].fillna(X[col].median())
@@ -398,7 +442,6 @@ def preprocess_data(
 
             report["filled_missing_categorical"].append(col)
 
-    # 14) outlier raporu
     outlier_report, extreme_outlier_report = detect_outliers_iqr(
         X,
         numerical_cols=numerical_cols,
@@ -407,7 +450,6 @@ def preprocess_data(
     report["outlier_report"] = outlier_report
     report["extreme_outlier_report"] = extreme_outlier_report
 
-    # 15) extreme outlier cap
     X, capped_columns = cap_extreme_outliers(
         X,
         numerical_cols=numerical_cols,
@@ -415,27 +457,75 @@ def preprocess_data(
     )
     report["capped_outlier_columns"] = capped_columns
 
-    # 16) ordinal encode
-    ordinal_columns = detect_ordinal_columns(X, categorical_cols)
+    categorical_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+    auto_detected_ordinal_columns = detect_ordinal_columns(X, categorical_cols)
+    report["auto_detected_ordinal_columns"] = list(auto_detected_ordinal_columns.keys())
 
-    if len(ordinal_columns) > 0:
-        X = encode_ordinal_columns(X, ordinal_columns)
-        report["ordinal_encoded_columns"] = list(ordinal_columns.keys())
+    final_ordinal_columns = dict(auto_detected_ordinal_columns)
 
-    # ordinal sonrası kalan kategorikler
+    valid_user_selected = []
+    failed_user_selected = []
+
+    for col in user_selected_ordinal_columns:
+        if col not in X.columns:
+            failed_user_selected.append(col)
+            continue
+
+        if col not in categorical_cols:
+            failed_user_selected.append(col)
+            continue
+
+        if col in final_ordinal_columns:
+            valid_user_selected.append(col)
+            continue
+
+        detected_mapping = detect_ordinal_columns(X[[col]], [col])
+
+        if col in detected_mapping:
+            final_ordinal_columns[col] = detected_mapping[col]
+            valid_user_selected.append(col)
+        else:
+            failed_user_selected.append(col)
+
+    if len(final_ordinal_columns) > 0:
+        X = encode_ordinal_columns(X, final_ordinal_columns)
+        report["ordinal_encoded_columns"] = list(final_ordinal_columns.keys())
+
+    report["user_selected_ordinal_columns"] = valid_user_selected
+    report["failed_user_ordinal_columns"] = failed_user_selected
+
     categorical_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
 
-    # 17) one-hot
     if len(categorical_cols) > 0:
         X = pd.get_dummies(X, columns=categorical_cols, drop_first=True)
         report["one_hot_encoded_columns"] = categorical_cols
 
-    # 18) target encode
     if y.dtype == "object" or str(y.dtype) == "category" or str(y.dtype) == "bool":
         le = LabelEncoder()
-        y = pd.Series(le.fit_transform(y), name=target_column)
+        y = pd.Series(le.fit_transform(y), name=target_column, index=y.index)
         report["target_encoded"] = True
         report["target_classes"] = list(le.classes_)
+
+    report["preview_before_pca"] = X.head().copy()
+    report["columns_before_pca"] = list(X.columns)
+
+    if apply_pca:
+        X, pca_report = apply_pca_to_features(
+            X,
+            variance_threshold=pca_variance_threshold
+        )
+        report["pca_applied"] = True
+        report["pca_report"] = pca_report
+    else:
+        report["pca_applied"] = False
+        report["pca_report"] = {
+            "pca_applied": False,
+            "original_feature_count": int(X.shape[1]),
+            "reduced_feature_count": int(X.shape[1]),
+            "selected_n_components": int(X.shape[1]),
+            "explained_variance_ratio_sum": 1.0,
+            "scaled_before_pca": False
+        }
 
     report["final_shape"] = (X.shape[0], X.shape[1])
 
