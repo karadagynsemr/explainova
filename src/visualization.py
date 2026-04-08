@@ -2,65 +2,117 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
+def _apply_clean_axis_style(ax):
+    ax.set_facecolor("#FFFFFF")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#CBD5E1")
+    ax.spines["bottom"].set_color("#CBD5E1")
+    ax.tick_params(axis="x", colors="#334155", labelsize=7)
+    ax.tick_params(axis="y", colors="#334155", labelsize=8)
+    ax.title.set_color("#0F172A")
+    ax.xaxis.label.set_color("#334155")
+    ax.yaxis.label.set_color("#334155")
+    ax.grid(axis="y", color="#E2E8F0", linestyle="--", linewidth=0.8, alpha=0.8)
+    ax.set_axisbelow(True)
+
+
 def plot_confusion_matrix_figure(confusion_matrix_array, class_labels):
-    fig, ax = plt.subplots(figsize=(3.8, 3.1), dpi=120)
+    fig, ax = plt.subplots(figsize=(4.2, 3.5), dpi=140)
+    fig.patch.set_facecolor("#F6F8FC")
 
-    im = ax.imshow(confusion_matrix_array, aspect="auto")
-
-    ax.set_title("Confusion Matrix", fontsize=10)
+    im = ax.imshow(confusion_matrix_array, aspect="auto", cmap="Blues")
+    ax.set_title("Confusion Matrix", fontsize=10, pad=10)
     ax.set_xlabel("Predicted", fontsize=9)
     ax.set_ylabel("Actual", fontsize=9)
 
     ax.set_xticks(range(len(class_labels)))
     ax.set_yticks(range(len(class_labels)))
-    ax.set_xticklabels(class_labels, rotation=25, ha="right", fontsize=8)
+    ax.set_xticklabels(class_labels, rotation=18, ha="right", fontsize=8)
     ax.set_yticklabels(class_labels, fontsize=8)
+
+    max_val = confusion_matrix_array.max() if confusion_matrix_array.size > 0 else 0
 
     for i in range(confusion_matrix_array.shape[0]):
         for j in range(confusion_matrix_array.shape[1]):
-            ax.text(j, i, str(confusion_matrix_array[i, j]), ha="center", va="center", fontsize=8)
+            val = confusion_matrix_array[i, j]
+            text_color = "white" if max_val > 0 and val > max_val * 0.55 else "#0F172A"
+            ax.text(j, i, str(val), ha="center", va="center", fontsize=8, color=text_color)
 
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    ax.grid(False)
+    for spine in ax.spines.values():
+        spine.set_color("#CBD5E1")
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.outline.set_edgecolor("#CBD5E1")
+    cbar.ax.tick_params(labelsize=8, colors="#334155")
+
     fig.tight_layout()
     return fig
 
 
-def plot_model_comparison_figure(results_df, problem_type):
+def plot_single_metric_comparison_figure(results_df, metric_name):
+    if results_df.empty or metric_name not in results_df.columns:
+        return None
+
     df = results_df.copy()
 
-    if df.empty:
-        return None
+    fig, ax = plt.subplots(figsize=(4.5, 3.0), dpi=140)
+    fig.patch.set_facecolor("#F6F8FC")
 
-    metric_columns = [
-        col for col in df.columns
-        if col not in ["Model", "Problem Type"]
-    ]
+    bars = ax.bar(
+        df["Model"],
+        df[metric_name],
+        color="#6366F1",
+        edgecolor="#4F46E5",
+        linewidth=0.8,
+        alpha=0.9
+    )
 
-    if len(metric_columns) == 0:
-        return None
-
-    if problem_type == "classification":
-        primary_metric = "Accuracy" if "Accuracy" in df.columns else metric_columns[0]
-    else:
-        primary_metric = "R2 Score" if "R2 Score" in df.columns else metric_columns[0]
-
-    fig, ax = plt.subplots(figsize=(4.8, 2.8), dpi=120)
-    ax.bar(df["Model"], df[primary_metric])
-    ax.set_title(f"{primary_metric} Comparison", fontsize=10)
+    ax.set_title(metric_name, fontsize=10, pad=8)
     ax.set_xlabel("")
-    ax.set_ylabel(primary_metric, fontsize=9)
-    plt.xticks(rotation=20, ha="right", fontsize=8)
-    plt.yticks(fontsize=8)
-    fig.tight_layout()
+    ax.set_ylabel(metric_name, fontsize=8)
 
+    _apply_clean_axis_style(ax)
+
+    plt.setp(ax.get_xticklabels(), rotation=28, ha="right", fontsize=7)
+
+    for bar in bars:
+        height = bar.get_height()
+        ax.annotate(
+            f"{height:.3f}",
+            xy=(bar.get_x() + bar.get_width() / 2, height),
+            xytext=(0, 4),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+            color="#334155"
+        )
+
+    fig.tight_layout()
     return fig
+
+
+def plot_metric_grid(results_df, metrics):
+    figures = {}
+
+    for metric in metrics:
+        fig = plot_single_metric_comparison_figure(results_df, metric)
+        if fig is not None:
+            figures[metric] = fig
+
+    return figures
 
 
 def plot_roc_curve_figure(detailed_results):
     has_any_roc = False
-    fig, ax = plt.subplots(figsize=(4.2, 3.2), dpi=120)
+    fig, ax = plt.subplots(figsize=(4.3, 3.5), dpi=140)
+    fig.patch.set_facecolor("#F6F8FC")
 
-    for model_name, details in detailed_results.items():
+    palette = ["#4F46E5", "#0EA5E9", "#10B981", "#F59E0B", "#EF4444"]
+
+    for idx, (model_name, details) in enumerate(detailed_results.items()):
         roc_data = details.get("roc_data")
 
         if roc_data is None:
@@ -70,22 +122,25 @@ def plot_roc_curve_figure(detailed_results):
         ax.plot(
             roc_data["fpr"],
             roc_data["tpr"],
-            label=f"{model_name} (AUC={roc_data['auc']:.3f})"
+            label=f"{model_name} (AUC={roc_data['auc']:.3f})",
+            linewidth=2,
+            color=palette[idx % len(palette)]
         )
 
     if not has_any_roc:
         plt.close(fig)
         return None
 
-    ax.plot([0, 1], [0, 1], linestyle="--")
-    ax.set_title("ROC Curve", fontsize=10)
+    ax.plot([0, 1], [0, 1], linestyle="--", color="#94A3B8", linewidth=1.4)
+    ax.set_title("ROC Curve", fontsize=10, pad=8)
     ax.set_xlabel("False Positive Rate", fontsize=9)
     ax.set_ylabel("True Positive Rate", fontsize=9)
-    ax.legend(fontsize=7, loc="lower right")
-    plt.xticks(fontsize=8)
-    plt.yticks(fontsize=8)
-    fig.tight_layout()
 
+    _apply_clean_axis_style(ax)
+    ax.grid(True, color="#E2E8F0", linestyle="--", linewidth=0.8, alpha=0.8)
+    ax.legend(fontsize=7, loc="lower right", frameon=True, facecolor="white", edgecolor="#E2E8F0")
+
+    fig.tight_layout()
     return fig
 
 
@@ -144,3 +199,25 @@ def get_roc_interpretation(detailed_results):
         f"Closer to the top-left is better. "
         f"The best ROC result here is {best_model_name} with AUC {best_auc:.3f}, which indicates {strength} separation."
     )
+
+
+def get_metric_commentary(results_df, metric_name, problem_type):
+    if results_df.empty or metric_name not in results_df.columns:
+        return "This metric could not be summarized."
+
+    ascending = metric_name in ["MAE", "RMSE"]
+    best_row = results_df.sort_values(by=metric_name, ascending=ascending).iloc[0]
+
+    model_name = best_row["Model"]
+    value = best_row[metric_name]
+
+    if problem_type == "classification":
+        if metric_name in ["Accuracy", "Precision", "Recall", "F1 Score", "ROC AUC"]:
+            return f"{metric_name} comparison suggests that {model_name} performs best on this criterion with a score of {value:.4f}."
+    else:
+        if metric_name == "R2 Score":
+            return f"R2 comparison suggests that {model_name} explains the target best with a score of {value:.4f}."
+        if metric_name in ["MAE", "RMSE"]:
+            return f"For {metric_name}, lower values are better. {model_name} performs best here with {value:.4f}."
+
+    return f"{model_name} performs best on {metric_name} with {value:.4f}."
