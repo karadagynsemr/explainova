@@ -13,9 +13,18 @@ from src.visualization import (
     plot_metric_grid,
     plot_roc_curve_figure,
     build_outlier_dataframe,
+    build_target_correlation_table,
+    plot_correlation_heatmap_figure,
     get_confusion_matrix_interpretation,
     get_roc_interpretation,
     get_metric_commentary
+)
+from src.explainability import (
+    compute_shap_outputs,
+    plot_shap_importance_bar,
+    plot_shap_summary_figure,
+    get_shap_selection_guidance,
+    get_shap_intro_text
 )
 
 st.set_page_config(
@@ -35,8 +44,6 @@ st.markdown("""
         --primary: #4F46E5;
         --primary-dark: #4338CA;
         --accent: #0EA5E9;
-        --info-bg: #EEF2FF;
-        --info-border: #C7D2FE;
     }
 
     .stApp {
@@ -144,6 +151,27 @@ st.markdown("""
         font-size: 1rem;
         line-height: 1.7;
         color: #334155;
+    }
+
+    .chart-note {
+        background: #F8FAFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 14px;
+        padding: 12px 14px;
+        margin-top: 10px;
+        margin-bottom: 10px;
+        font-size: 1rem;
+        line-height: 1.72;
+        color: #334155;
+    }
+
+    .order-box {
+        background: #F8FAFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 14px;
+        padding: 12px 14px;
+        margin-top: 10px;
+        margin-bottom: 12px;
     }
 
     div[data-testid="stMetric"] {
@@ -262,7 +290,9 @@ def reset_training_state():
         "results_df",
         "detailed_results",
         "selected_training_mode",
-        "selected_model_name"
+        "selected_model_name",
+        "shap_outputs",
+        "shap_model_name"
     ]:
         if key in st.session_state:
             del st.session_state[key]
@@ -294,6 +324,10 @@ def show_info_box(title, text):
 
 def show_metric_comment(text):
     st.markdown(f'<div class="metric-comment">{text}</div>', unsafe_allow_html=True)
+
+
+def show_chart_note(text):
+    st.markdown(f'<div class="chart-note">{text}</div>', unsafe_allow_html=True)
 
 
 def show_list(title, items):
@@ -345,29 +379,44 @@ def show_preprocessing_explanations(report):
     )
     explain_preprocessing_step(
         "Categorical columns encoded",
-        "Ordinal columns were encoded with ordered numeric values when a known order was detected. Remaining categorical columns were one-hot encoded."
+        "Ordinal columns were encoded with ordered numeric values when a known order was detected or when the user explicitly defined that order. Remaining categorical columns were one-hot encoded."
     )
 
-    if report.get("pca_applied"):
+    if report.get("feature_reduction_applied"):
         explain_preprocessing_step(
-            "PCA applied",
-            "PCA was used to reduce the number of features while preserving most of the information. This can speed up training, but it may reduce interpretability."
+            "Feature reduction for explainability",
+            "Because the dataset was large, optional feature reduction was used to simplify the model while preserving real feature names. Low-variance features, highly correlated features, and lower-importance features were reduced, except for columns explicitly protected by the user."
         )
 
 
-def show_metric_explanations(problem_type):
+def show_metric_explanations(problem_type, has_roc_auc=False):
     st.subheader("Metric Explanations")
 
     if problem_type == "classification":
-        st.markdown("**Accuracy** — Overall proportion of correct predictions.")
-        st.markdown("**Precision** — Among predicted positives, how many were actually positive.")
-        st.markdown("**Recall** — Among actual positives, how many were correctly identified.")
-        st.markdown("**F1 Score** — A balanced score combining precision and recall.")
-        st.markdown("**ROC AUC** — Shows how well the model separates classes across thresholds. Higher is better.")
+        st.markdown("**Accuracy** — Shows the overall proportion of correct predictions.")
+        st.markdown("**When it matters:** Useful when classes are balanced and all errors have similar importance.")
+
+        st.markdown("**Precision** — Shows how many predicted positive cases were actually positive.")
+        st.markdown("**When it matters:** Important when false positives are costly.")
+
+        st.markdown("**Recall** — Shows how many real positive cases were successfully found.")
+        st.markdown("**When it matters:** Important when missing a true positive is costly.")
+
+        st.markdown("**F1 Score** — Balances precision and recall into a single value.")
+        st.markdown("**When it matters:** Useful when both false positives and false negatives matter.")
+
+        if has_roc_auc:
+            st.markdown("**ROC AUC** — Measures how well the model separates two classes across different thresholds.")
+            st.markdown("**When it matters:** Useful in binary classification when class separation matters.")
     else:
-        st.markdown("**R2 Score** — Indicates how well the model explains the target variable. Higher is better.")
-        st.markdown("**MAE** — Average absolute prediction error.")
-        st.markdown("**RMSE** — Similar to MAE, but penalizes larger errors more strongly.")
+        st.markdown("**R2 Score** — Shows how well the model explains variation in the target.")
+        st.markdown("**When it matters:** Good for understanding overall explanatory power.")
+
+        st.markdown("**MAE** — The average absolute prediction error.")
+        st.markdown("**When it matters:** Useful when you want an error measure in the original target units.")
+
+        st.markdown("**RMSE** — Similar to MAE, but gives more weight to larger errors.")
+        st.markdown("**When it matters:** Useful when large mistakes should be penalized more strongly.")
 
 
 def get_best_model_info(results_df, problem_type):
@@ -396,8 +445,19 @@ def is_large_dataset(df, row_threshold=50000, column_threshold=100, cell_thresho
     )
 
 
+def should_offer_feature_reduction(df, row_threshold=10000, column_threshold=40, cell_threshold=300000):
+    rows, cols = df.shape
+    total_cells = rows * cols
+
+    return (
+            rows >= row_threshold
+            or cols >= column_threshold
+            or total_cells >= cell_threshold
+    )
+
+
 def show_small_centered_plot(fig):
-    col1, col2, col3 = st.columns([1.5, 2.1, 1.5])
+    col1, col2, col3 = st.columns([1.2, 2.8, 1.2])
     with col2:
         st.pyplot(fig, use_container_width=False)
 
@@ -428,6 +488,13 @@ def show_metric_plots(results_df, problem_type):
                 show_metric_comment(get_metric_commentary(results_df, metric, problem_type))
 
 
+def parse_order_input(order_text):
+    if not order_text:
+        return []
+
+    return [item.strip() for item in order_text.split(",") if item.strip()]
+
+
 uploaded_file = st.file_uploader(
     "Upload your dataset",
     type=["csv", "xlsx", "xls", "tsv"],
@@ -446,18 +513,41 @@ if uploaded_file is not None:
         col2.metric("Columns", df.shape[1])
         col3.metric("Missing Values", int(df.isnull().sum().sum()))
 
-        show_section_header("Target Selection", "Choose the variable the model should predict.")
+        show_section_header("Feature and Target Selection", "Choose the target column and decide whether to use all features or only selected ones.")
+
+        feature_mode = st.radio(
+            "How would you like to use features?",
+            options=["Use all available features", "Select features manually"],
+            index=0,
+            help="You can keep all features or manually select a subset before preprocessing."
+        )
+
         target_column = st.selectbox(
             "Select the target column",
             df.columns,
             help="The target column is the output variable the model will try to predict."
         )
 
-        ordinal_info = suggest_ordinal_columns(df, target_column)
+        selected_feature_columns = None
+        available_feature_candidates = [col for col in df.columns if col != target_column]
+
+        if feature_mode == "Select features manually":
+            selected_feature_columns = st.multiselect(
+                "Select the feature columns to include",
+                options=available_feature_candidates,
+                default=available_feature_candidates[: min(8, len(available_feature_candidates))],
+                help="Only the selected feature columns will be used during preprocessing and model training."
+            )
+
+        ordinal_source_df = df if selected_feature_columns is None else df[selected_feature_columns + [target_column]]
+        ordinal_info = suggest_ordinal_columns(ordinal_source_df, target_column)
         all_categorical_columns = ordinal_info["categorical_columns"]
         auto_detected_ordinal_columns = ordinal_info["auto_detected_ordinal_columns"]
 
         show_section_header("Preprocessing Options", "Review the guidance and choose your preprocessing settings.")
+
+        user_selected_ordinal_columns = []
+        user_defined_ordinal_mappings = {}
 
         if all_categorical_columns:
             with st.expander("Ordinal data information"):
@@ -482,56 +572,100 @@ if uploaded_file is not None:
                     help="Choose extra columns only if their categories have a true order."
                 )
 
-                with st.expander("How should I choose extra ordinal columns?"):
-                    st.write(
-                        "Select a column only if its values follow a clear sequence. "
-                        "If a safe order cannot be detected automatically, the system will report that."
+                if user_selected_ordinal_columns:
+                    st.markdown("### Define category order for selected ordinal columns")
+                    st.caption(
+                        "For each selected column, enter the category order from lowest to highest, separated by commas."
                     )
-            else:
-                user_selected_ordinal_columns = []
-        else:
-            user_selected_ordinal_columns = []
+
+                    for col in user_selected_ordinal_columns:
+                        unique_values = (
+                            ordinal_source_df[col].dropna().astype(str).str.strip().unique().tolist()
+                            if col in ordinal_source_df.columns else []
+                        )
+
+                        st.markdown(
+                            f"""
+                            <div class="order-box">
+                                <strong>{col}</strong><br>
+                                Available values: {", ".join(unique_values) if unique_values else "No non-null values found"}
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+
+                        order_text = st.text_input(
+                            f"Order for {col}",
+                            key=f"order_{col}",
+                            placeholder="Example: low, medium, high",
+                            help="Write the values in order from lowest to highest."
+                        )
+
+                        parsed_order = parse_order_input(order_text)
+                        if parsed_order:
+                            user_defined_ordinal_mappings[col] = parsed_order
 
         large_dataset_flag = is_large_dataset(df)
+        feature_reduction_available = should_offer_feature_reduction(df)
 
         if large_dataset_flag:
             st.warning("This dataset is large. Preprocessing can still run, but model training may take longer.")
 
-        with st.expander("PCA information"):
-            st.write(
-                "PCA reduces the number of features while trying to preserve most of the useful information. "
-                "It can speed up training, but the new PCA components are less directly interpretable than the original columns."
+        apply_feature_reduction = "No"
+        protected_original_features = []
+
+        if feature_reduction_available:
+            show_info_box(
+                "Feature Reduction for Explainability",
+                "Because this dataset is relatively large, you can optionally reduce the feature set without breaking feature-level interpretability. "
             )
 
-        use_pca = st.radio(
-            "Would you like to use PCA before model training?",
-            options=["No", "Yes"],
-            index=0,
-            help="PCA can reduce dimensionality and training time, but it may reduce interpretability."
-        )
+            apply_feature_reduction = st.radio(
+                "Would you like to apply explainability-friendly feature reduction?",
+                options=["No", "Yes"],
+                index=0,
+                help="This can simplify the model by removing low-variance, highly correlated, and lower-importance features while keeping original feature names."
+            )
+
+            if apply_feature_reduction == "Yes":
+                protected_original_features = st.multiselect(
+                    "Are there any original features that must definitely be kept?",
+                    options=available_feature_candidates,
+                    help="Selected features will be protected during feature reduction whenever possible."
+                )
 
         if st.button("Run Preprocessing"):
             reset_training_state()
 
-            X, y, report = preprocess_data(
-                df=df,
-                target_column=target_column,
-                user_selected_ordinal_columns=user_selected_ordinal_columns,
-                apply_pca=(use_pca == "Yes"),
-                pca_variance_threshold=0.95
-            )
+            if feature_mode == "Select features manually" and (selected_feature_columns is None or len(selected_feature_columns) == 0):
+                st.error("Please select at least one feature column.")
+            else:
+                X, y, report, X_explain_reference = preprocess_data(
+                    df=df,
+                    target_column=target_column,
+                    selected_feature_columns=selected_feature_columns,
+                    user_selected_ordinal_columns=user_selected_ordinal_columns,
+                    user_defined_ordinal_mappings=user_defined_ordinal_mappings,
+                    apply_feature_reduction=(apply_feature_reduction == "Yes"),
+                    protected_original_features=protected_original_features,
+                    low_variance_threshold=0.0001,
+                    high_correlation_threshold=0.95,
+                    top_k_important_features=40
+                )
 
-            st.session_state["X_processed"] = X
-            st.session_state["y_processed"] = y
-            st.session_state["preprocessing_report"] = report
-            st.session_state["target_column"] = target_column
-            st.session_state["large_dataset_flag"] = large_dataset_flag
+                st.session_state["X_processed"] = X
+                st.session_state["y_processed"] = y
+                st.session_state["X_explain_reference"] = X_explain_reference
+                st.session_state["preprocessing_report"] = report
+                st.session_state["target_column"] = target_column
+                st.session_state["large_dataset_flag"] = large_dataset_flag
 
-            st.success("Preprocessing completed successfully.")
+                st.success("Preprocessing completed successfully.")
 
         if "X_processed" in st.session_state and "y_processed" in st.session_state:
             X = st.session_state["X_processed"]
             y = st.session_state["y_processed"]
+            X_explain_reference = st.session_state["X_explain_reference"]
             report = st.session_state["preprocessing_report"]
 
             show_section_header("Preprocessing Review", "Inspect the processed dataset and the main preprocessing outcomes.")
@@ -549,13 +683,11 @@ if uploaded_file is not None:
             summary_col5.metric("Datetime Features Created", len(report["created_datetime_features"]))
             summary_col6.metric("Encoded Columns", len(report["ordinal_encoded_columns"]) + len(report["one_hot_encoded_columns"]))
 
-            if report.get("pca_applied") and report.get("pca_report") is not None:
-                pca_report = report["pca_report"]
-
-                pca_col1, pca_col2, pca_col3 = st.columns(3)
-                pca_col1.metric("Original Feature Count", pca_report["original_feature_count"], help="The number of feature columns before PCA.")
-                pca_col2.metric("Reduced Feature Count", pca_report["reduced_feature_count"], help="The number of PCA components kept after dimensionality reduction.")
-                pca_col3.metric("Explained Variance", f"{pca_report['explained_variance_ratio_sum']:.2%}", help="This shows how much of the original information is preserved by the selected PCA components.")
+            if report.get("feature_reduction_applied"):
+                red_col1, red_col2, red_col3 = st.columns(3)
+                red_col1.metric("Low-Variance Features Removed", len(report["removed_low_variance_columns"]))
+                red_col2.metric("Highly Correlated Features Removed", len(report["removed_high_correlation_columns"]))
+                red_col3.metric("Lower-Importance Features Removed", len(report["removed_low_importance_columns"]))
 
             st.markdown("### What was done?")
             st.write("- Duplicate rows were removed when found.")
@@ -564,29 +696,11 @@ if uploaded_file is not None:
             st.write("- Datetime columns were transformed into usable features.")
             st.write("- Ordinal and nominal categorical features were encoded.")
             st.write("- Extreme outliers were capped.")
-            if report.get("pca_applied"):
-                st.write("- PCA was applied to reduce feature count before model training.")
+            if report.get("feature_reduction_applied"):
+                st.write("- Explainability-friendly feature reduction was applied on the final processed features.")
 
             st.subheader("Processed Data Review")
-            if report.get("pca_applied"):
-                st.caption("PCA is enabled. The table below shows the processed data before PCA so it remains easier to understand.")
-                st.dataframe(report["preview_before_pca"], use_container_width=True)
-
-                with st.expander("What changed after PCA?"):
-                    pca_report = report["pca_report"]
-                    st.write(
-                        f"PCA reduced the feature space from **{pca_report['original_feature_count']}** columns "
-                        f"to **{pca_report['reduced_feature_count']}** components."
-                    )
-                    st.write(
-                        "The original processed columns were not individually deleted one by one. "
-                        "Instead, PCA combined information from many columns into a smaller number of components."
-                    )
-                    st.write(
-                        "This was done to preserve most of the useful variation in the data while making model training faster and lighter."
-                    )
-            else:
-                st.dataframe(X.head(), use_container_width=True)
+            st.dataframe(X_explain_reference.head(), use_container_width=True)
 
             with st.expander("Detailed preprocessing explanations"):
                 show_preprocessing_explanations(report)
@@ -595,6 +709,12 @@ if uploaded_file is not None:
                 st.subheader("Dataset Shape")
                 st.write(f"Initial shape: {report['initial_shape']}")
                 st.write(f"Final feature shape: {report['final_shape']}")
+
+                st.subheader("Selected Features")
+                if report["selected_feature_columns"] is None:
+                    st.write("All available features were used.")
+                else:
+                    st.write(report["selected_feature_columns"])
 
                 st.subheader("Dropped Columns")
                 show_list("Empty Columns", report["dropped_empty_columns"])
@@ -615,6 +735,7 @@ if uploaded_file is not None:
                 st.subheader("Encoding")
                 show_list("Auto-detected Ordinal Columns", report["auto_detected_ordinal_columns"])
                 show_list("User-selected Ordinal Columns", report["user_selected_ordinal_columns"])
+                show_list("User-defined Ordinal Columns", report["user_defined_ordinal_columns"])
                 show_list("Ordinal Columns That Could Not Be Safely Encoded", report["failed_user_ordinal_columns"])
                 show_list("Ordinal Encoded Columns", report["ordinal_encoded_columns"])
                 show_list("One-Hot Encoded Columns", report["one_hot_encoded_columns"])
@@ -624,6 +745,18 @@ if uploaded_file is not None:
                 st.dataframe(outlier_df, use_container_width=True)
                 show_list("Columns with Capped Extreme Outliers", report["capped_outlier_columns"])
 
+                if report.get("feature_reduction_applied"):
+                    st.subheader("Feature Reduction for Explainability")
+                    show_list("Protected Original Features", report["protected_original_features"])
+                    show_list("Protected Transformed Features", report["protected_transformed_features"])
+                    show_list("Removed Low-Variance Features", report["removed_low_variance_columns"])
+                    show_list("Removed Highly Correlated Features", report["removed_high_correlation_columns"])
+                    show_list("Removed Lower-Importance Features", report["removed_low_importance_columns"])
+
+                    if report["feature_importance_ranking"] is not None:
+                        st.write("Model-based feature importance ranking:")
+                        st.dataframe(report["feature_importance_ranking"].head(20), use_container_width=True)
+
                 st.subheader("Target Information")
                 st.write(f"Target encoded: {report['target_encoded']}")
                 if report["target_classes"] is not None:
@@ -631,15 +764,53 @@ if uploaded_file is not None:
                     for cls in report["target_classes"]:
                         st.write(f"- {cls}")
 
-                st.subheader("PCA Information")
-                st.write(report["pca_report"])
+            show_section_header("Feature Relationship Overview", "A direct view of linear relationships in the processed dataset before model-based explanations.")
+
+            explain_X = X_explain_reference.copy()
+            corr_table = build_target_correlation_table(
+                explain_X,
+                y,
+                target_name=st.session_state["target_column"],
+                top_n=10
+            )
+
+            if not corr_table.empty:
+                show_info_box(
+                    "What this shows",
+                    "This section shows linear correlations between processed features and the target variable. "
+                    "Correlation values close to 1 or -1 indicate a stronger relationship, while values close to 0 indicate a weaker one. "
+                    "Positive values suggest that the feature tends to increase with the target, whereas negative values suggest an inverse relationship."
+                )
+
+                corr_col1, corr_col2 = st.columns([1.0, 1.0])
+
+                with corr_col1:
+                    st.subheader("Top Feature–Target Correlations")
+                    st.dataframe(corr_table[["Feature", "Correlation with Target"]], use_container_width=True)
+
+                with corr_col2:
+                    heatmap_fig = plot_correlation_heatmap_figure(
+                        explain_X,
+                        y,
+                        target_name=st.session_state["target_column"],
+                        top_n=10
+                    )
+                    if heatmap_fig is not None:
+                        st.pyplot(heatmap_fig, use_container_width=False)
+
+            else:
+                st.info("A correlation-based overview could not be generated because no suitable numeric features were available after preprocessing.")
 
             show_section_header("Model Training", "Choose whether to compare several models or focus on one.")
+
             detected_problem_type = detect_problem_type(y)
             available_models = get_available_models(detected_problem_type)
 
-            with st.expander("Training mode information"):
-                st.write("You can either train one model only, or train multiple baseline models and compare their performance side by side.")
+            show_info_box(
+                "Training mode guidance",
+                "Training a single model is faster and useful when you already have a preferred method. "
+                "Comparing multiple models takes longer, but it helps you understand which algorithm fits your dataset better before moving into deeper explainability."
+            )
 
             training_mode_display = st.radio(
                 "How would you like to train models?",
@@ -684,11 +855,12 @@ if uploaded_file is not None:
                 "results_df" in st.session_state
                 and "problem_type" in st.session_state
                 and "detailed_results" in st.session_state
+                and "X_explain_reference" in st.session_state
         ):
             results_df = st.session_state["results_df"]
             problem_type = st.session_state["problem_type"]
             detailed_results = st.session_state["detailed_results"]
-            training_mode = st.session_state.get("selected_training_mode", "multiple")
+            X_explain_reference = st.session_state["X_explain_reference"]
 
             show_section_header("Results Dashboard", "Review model results, metric comparisons, and classification visuals.")
 
@@ -699,8 +871,9 @@ if uploaded_file is not None:
             if best_model_name is not None:
                 st.success(f"Best model based on {best_metric_name}: {best_model_name} ({best_metric_value:.4f})")
 
+            has_roc_auc = "ROC AUC" in results_df.columns
             with st.expander("Metric explanations"):
-                show_metric_explanations(problem_type)
+                show_metric_explanations(problem_type, has_roc_auc=has_roc_auc)
 
             show_metric_plots(results_df, problem_type)
 
@@ -708,7 +881,8 @@ if uploaded_file is not None:
                 if problem_type == "classification":
                     st.write("Classification models are evaluated by how accurately and consistently they predict the correct class.")
                     st.write("Confusion Matrix shows where the model is correct and where it mixes up classes.")
-                    st.write("ROC Curve shows how well the model separates two classes across different decision thresholds.")
+                    if has_roc_auc:
+                        st.write("ROC Curve shows how well the model separates two classes across different decision thresholds.")
                 else:
                     st.write("Regression models are evaluated by how close their predictions are to the real numeric values.")
                     st.write("R2 Score shows explanatory power, while MAE and RMSE show prediction error size.")
@@ -716,14 +890,11 @@ if uploaded_file is not None:
             if problem_type == "classification":
                 st.subheader("Confusion Matrix")
 
-                if training_mode == "single":
-                    model_to_show = list(detailed_results.keys())[0]
-                else:
-                    model_to_show = st.selectbox(
-                        "Select a model for confusion matrix",
-                        options=list(detailed_results.keys()),
-                        help="Choose which model's confusion matrix to inspect."
-                    )
+                model_to_show = st.selectbox(
+                    "Select a model for confusion matrix",
+                    options=list(detailed_results.keys()),
+                    help="Choose which model's confusion matrix to inspect."
+                )
 
                 selected_details = detailed_results[model_to_show]
                 cm = selected_details.get("confusion_matrix")
@@ -740,13 +911,74 @@ if uploaded_file is not None:
                 if roc_fig is not None:
                     st.subheader("ROC Curve")
                     show_small_centered_plot(roc_fig)
-
                     show_info_box(
                         "ROC Curve Insight",
                         get_roc_interpretation(detailed_results)
                     )
-                else:
-                    st.info("ROC curve is available only for compatible binary classification cases.")
+
+            show_section_header("SHAP Explainability", "Select the model you want to interpret after reviewing the evaluation results.")
+
+            show_info_box(
+                "How to choose a model for SHAP",
+                get_shap_selection_guidance(problem_type, has_roc_auc=has_roc_auc)
+            )
+
+            shap_model_name = st.selectbox(
+                "Select the model to explain with SHAP",
+                options=list(detailed_results.keys()),
+                help="Choose the trained model whose predictions you want to interpret."
+            )
+
+            if st.button("Generate SHAP Analysis"):
+                with st.spinner("Generating SHAP explanations..."):
+                    selected_shap_details = detailed_results[shap_model_name]
+                    trained_model = selected_shap_details["trained_model"]
+
+                    shap_outputs = compute_shap_outputs(
+                        trained_model=trained_model,
+                        X_reference=X_explain_reference,
+                        problem_type=problem_type,
+                        max_background_samples=100,
+                        max_explain_samples=200
+                    )
+
+                    st.session_state["shap_model_name"] = shap_model_name
+                    st.session_state["shap_outputs"] = shap_outputs
+
+            if "shap_outputs" in st.session_state:
+                shap_outputs = st.session_state["shap_outputs"]
+                shap_model_name = st.session_state.get("shap_model_name", "Selected Model")
+
+                st.subheader(f"SHAP Results for {shap_model_name}")
+                show_info_box(
+                    "What SHAP shows",
+                    get_shap_intro_text()
+                )
+
+                importance_df = shap_outputs["feature_importance_df"]
+
+                shap_col1, shap_col2 = st.columns([1.0, 1.2])
+
+                with shap_col1:
+                    st.subheader("Top SHAP Features")
+                    st.dataframe(importance_df.head(12), use_container_width=True)
+                    show_chart_note("This table ranks features by their average absolute SHAP contribution. Higher values mean the feature has a stronger overall impact on the model's predictions.")
+
+                with shap_col2:
+                    shap_bar_fig = plot_shap_importance_bar(importance_df, top_n=12)
+                    if shap_bar_fig is not None:
+                        st.pyplot(shap_bar_fig, use_container_width=False)
+                    show_chart_note("This chart visualizes the same ranking more intuitively. Longer bars indicate features that influence the model more strongly across the analyzed samples.")
+
+                st.subheader("SHAP Summary Plot")
+                shap_summary_fig = plot_shap_summary_figure(
+                    shap_outputs["shap_values"],
+                    shap_outputs["X_explain"],
+                    max_display=12
+                )
+                if shap_summary_fig is not None:
+                    show_small_centered_plot(shap_summary_fig)
+                show_chart_note("Each dot represents one sample. The horizontal position shows whether the feature pushes the prediction up or down, while color reflects the feature value. A wider spread suggests that the feature effect varies more strongly across samples.")
 
     except Exception as e:
         st.error(f"An error occurred while processing the dataset: {e}")

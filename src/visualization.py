@@ -74,13 +74,13 @@ def plot_single_metric_comparison_figure(results_df, metric_name):
     ax.set_ylabel(metric_name, fontsize=8)
 
     _apply_clean_axis_style(ax)
-
     plt.setp(ax.get_xticklabels(), rotation=28, ha="right", fontsize=7)
 
     for bar in bars:
         height = bar.get_height()
+        label = f"{height:.3f}"
         ax.annotate(
-            f"{height:.3f}",
+            label,
             xy=(bar.get_x() + bar.get_width() / 2, height),
             xytext=(0, 4),
             textcoords="offset points",
@@ -150,6 +150,74 @@ def build_outlier_dataframe(report):
         "Outliers (1.5 IQR)": list(report["outlier_report"].values()),
         "Extreme Outliers (3 IQR)": list(report["extreme_outlier_report"].values())
     })
+
+
+def build_target_correlation_table(X, y, target_name="target", top_n=10):
+    if X.empty:
+        return pd.DataFrame()
+
+    numeric_X = X.select_dtypes(include=["number"]).copy()
+    if numeric_X.empty:
+        return pd.DataFrame()
+
+    y_series = pd.Series(y, name=target_name, index=X.index)
+    combined = numeric_X.copy()
+    combined[target_name] = y_series
+
+    corr_series = combined.corr(numeric_only=True)[target_name].drop(labels=[target_name], errors="ignore")
+    corr_series = corr_series.dropna()
+
+    if corr_series.empty:
+        return pd.DataFrame()
+
+    corr_df = corr_series.reset_index()
+    corr_df.columns = ["Feature", "Correlation with Target"]
+    corr_df["Absolute Correlation"] = corr_df["Correlation with Target"].abs()
+    corr_df = corr_df.sort_values(by="Absolute Correlation", ascending=False).head(top_n).reset_index(drop=True)
+
+    return corr_df
+
+
+def plot_correlation_heatmap_figure(X, y, target_name="Target", top_n=10):
+    corr_table = build_target_correlation_table(X, y, target_name=target_name, top_n=top_n)
+
+    if corr_table.empty:
+        return None
+
+    selected_features = corr_table["Feature"].tolist()
+
+    numeric_X = X.select_dtypes(include=["number"]).copy()
+    combined = numeric_X[selected_features].copy()
+    combined[target_name] = pd.Series(y, name=target_name, index=X.index)
+
+    corr_matrix = combined.corr(numeric_only=True)
+
+    fig, ax = plt.subplots(figsize=(4.7, 4.1), dpi=140)
+    fig.patch.set_facecolor("#F6F8FC")
+
+    im = ax.imshow(corr_matrix.values, cmap="coolwarm", vmin=-1, vmax=1, aspect="auto")
+    ax.set_title("Correlation Heatmap", fontsize=10, pad=10)
+
+    ax.set_xticks(range(len(corr_matrix.columns)))
+    ax.set_yticks(range(len(corr_matrix.index)))
+    ax.set_xticklabels(corr_matrix.columns, rotation=28, ha="right", fontsize=7)
+    ax.set_yticklabels(corr_matrix.index, fontsize=7)
+
+    for i in range(corr_matrix.shape[0]):
+        for j in range(corr_matrix.shape[1]):
+            val = corr_matrix.iloc[i, j]
+            text_color = "white" if abs(val) > 0.55 else "#0F172A"
+            ax.text(j, i, f"{val:.2f}", ha="center", va="center", fontsize=6.2, color=text_color)
+
+    for spine in ax.spines.values():
+        spine.set_color("#CBD5E1")
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.outline.set_edgecolor("#CBD5E1")
+    cbar.ax.tick_params(labelsize=8, colors="#334155")
+
+    fig.tight_layout()
+    return fig
 
 
 def get_confusion_matrix_interpretation(confusion_matrix_array, class_labels):

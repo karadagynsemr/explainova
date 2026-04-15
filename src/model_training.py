@@ -11,7 +11,7 @@ from sklearn.metrics import (
     confusion_matrix, roc_curve, roc_auc_score
 )
 
-from sklearn.linear_model import LogisticRegression, LinearRegression
+from sklearn.svm import SVC, SVR
 from sklearn.ensemble import (
     RandomForestClassifier,
     RandomForestRegressor,
@@ -34,9 +34,9 @@ def detect_problem_type(y, unique_threshold=10):
 
 def get_classification_models():
     return {
-        "Logistic Regression": Pipeline([
+        "SVM": Pipeline([
             ("scaler", StandardScaler()),
-            ("model", LogisticRegression(max_iter=1000))
+            ("model", SVC(probability=True, random_state=42))
         ]),
         "Random Forest": RandomForestClassifier(random_state=42),
         "Gradient Boosting": GradientBoostingClassifier(random_state=42)
@@ -45,9 +45,9 @@ def get_classification_models():
 
 def get_regression_models():
     return {
-        "Linear Regression": Pipeline([
+        "SVR": Pipeline([
             ("scaler", StandardScaler()),
-            ("model", LinearRegression())
+            ("model", SVR())
         ]),
         "Random Forest Regressor": RandomForestRegressor(random_state=42),
         "Gradient Boosting Regressor": GradientBoostingRegressor(random_state=42)
@@ -96,6 +96,7 @@ def evaluate_classification_model(model, X_train, X_test, y_train, y_test, class
                     "thresholds": thresholds,
                     "auc": float(auc_score)
                 }
+                metrics["ROC AUC"] = float(auc_score)
         except Exception:
             roc_data = None
 
@@ -145,10 +146,6 @@ def build_results_dataframe(problem_type, detailed_results):
             "Problem Type": problem_type
         }
         row.update(details["metrics"])
-
-        if problem_type == "classification" and details.get("roc_data") is not None:
-            row["ROC AUC"] = details["roc_data"]["auc"]
-
         rows.append(row)
 
     return pd.DataFrame(rows)
