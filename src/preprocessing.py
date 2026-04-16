@@ -58,9 +58,12 @@ def try_convert_object_to_numeric(df, target_column, conversion_threshold=0.80):
     data = df.copy()
     converted_columns = []
 
-    object_cols = data.select_dtypes(include=["object"]).columns.tolist()
+    object_like_cols = [
+        col for col in data.columns
+        if (pd.api.types.is_object_dtype(data[col]) or pd.api.types.is_string_dtype(data[col]))
+    ]
 
-    for col in object_cols:
+    for col in object_like_cols:
         if col == target_column:
             continue
 
@@ -93,9 +96,12 @@ def try_parse_datetime_columns(df, target_column, parse_threshold=0.80):
     parsed_datetime_columns = []
     created_datetime_features = []
 
-    object_cols = data.select_dtypes(include=["object"]).columns.tolist()
+    object_like_cols = [
+        col for col in data.columns
+        if (pd.api.types.is_object_dtype(data[col]) or pd.api.types.is_string_dtype(data[col]))
+    ]
 
-    for col in object_cols:
+    for col in object_like_cols:
         if col == target_column:
             continue
 
@@ -182,7 +188,15 @@ def suggest_ordinal_columns(df, target_column):
     else:
         X = data.copy()
 
-    categorical_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+    categorical_cols = [
+        col for col in X.columns
+        if (
+                pd.api.types.is_object_dtype(X[col])
+                or pd.api.types.is_string_dtype(X[col])
+                or pd.api.types.is_categorical_dtype(X[col])
+                or pd.api.types.is_bool_dtype(X[col])
+        )
+    ]
     ordinal_mappings = detect_ordinal_columns(X, categorical_cols)
 
     return {
@@ -401,6 +415,15 @@ def keep_top_k_important_features(X, y, problem_type, protected_columns=None, to
     return X[keep_columns].copy(), drop_columns, importance_df
 
 
+def target_should_be_encoded(y):
+    return (
+            pd.api.types.is_object_dtype(y)
+            or pd.api.types.is_string_dtype(y)
+            or pd.api.types.is_categorical_dtype(y)
+            or pd.api.types.is_bool_dtype(y)
+    )
+
+
 def preprocess_data(
         df,
         target_column,
@@ -541,7 +564,15 @@ def preprocess_data(
     X = X.drop(columns=id_columns, errors="ignore")
     report["dropped_id_columns"] = id_columns
 
-    categorical_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+    categorical_cols = [
+        col for col in X.columns
+        if (
+                pd.api.types.is_object_dtype(X[col])
+                or pd.api.types.is_string_dtype(X[col])
+                or pd.api.types.is_categorical_dtype(X[col])
+                or pd.api.types.is_bool_dtype(X[col])
+        )
+    ]
     numerical_cols = X.select_dtypes(include=["number"]).columns.tolist()
 
     high_cardinality_columns = []
@@ -557,7 +588,15 @@ def preprocess_data(
     X = X.drop(columns=high_cardinality_columns, errors="ignore")
     report["dropped_high_cardinality_columns"] = high_cardinality_columns
 
-    categorical_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+    categorical_cols = [
+        col for col in X.columns
+        if (
+                pd.api.types.is_object_dtype(X[col])
+                or pd.api.types.is_string_dtype(X[col])
+                or pd.api.types.is_categorical_dtype(X[col])
+                or pd.api.types.is_bool_dtype(X[col])
+        )
+    ]
     numerical_cols = X.select_dtypes(include=["number"]).columns.tolist()
 
     report["categorical_columns_before_encoding"] = categorical_cols.copy()
@@ -594,7 +633,15 @@ def preprocess_data(
     )
     report["capped_outlier_columns"] = capped_columns
 
-    categorical_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+    categorical_cols = [
+        col for col in X.columns
+        if (
+                pd.api.types.is_object_dtype(X[col])
+                or pd.api.types.is_string_dtype(X[col])
+                or pd.api.types.is_categorical_dtype(X[col])
+                or pd.api.types.is_bool_dtype(X[col])
+        )
+    ]
     auto_detected_ordinal_columns = detect_ordinal_columns(X, categorical_cols)
     report["auto_detected_ordinal_columns"] = list(auto_detected_ordinal_columns.keys())
 
@@ -635,16 +682,23 @@ def preprocess_data(
     report["user_defined_ordinal_columns"] = valid_user_defined
     report["failed_user_ordinal_columns"] = list(sorted(set(failed_user_selected)))
 
-    categorical_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+    categorical_cols = [
+        col for col in X.columns
+        if (
+                pd.api.types.is_object_dtype(X[col])
+                or pd.api.types.is_string_dtype(X[col])
+                or pd.api.types.is_categorical_dtype(X[col])
+                or pd.api.types.is_bool_dtype(X[col])
+        )
+    ]
 
     if len(categorical_cols) > 0:
         X = pd.get_dummies(X, columns=categorical_cols, drop_first=True)
         report["one_hot_encoded_columns"] = categorical_cols
 
-    if y.dtype == "object" or str(y.dtype) == "category" or str(y.dtype) == "bool":
+    if target_should_be_encoded(y):
         le = LabelEncoder()
-        original_classes = list(le.classes_) if hasattr(le, "classes_") else None
-        y = pd.Series(le.fit_transform(y), name=target_column, index=y.index)
+        y = pd.Series(le.fit_transform(y.astype(str)), name=target_column, index=y.index)
         original_classes = list(le.classes_)
         report["target_encoded"] = True
         report["target_classes"] = original_classes

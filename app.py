@@ -31,7 +31,7 @@ st.set_page_config(
     page_title="Explainova",
     layout="wide"
 )
-st.write("DEPLOY VERSION CHECK - 2026-04-16 v2")
+
 st.markdown("""
 <style>
     :root {
@@ -352,11 +352,11 @@ def show_list(title, items):
 
 def count_total_dropped_columns(report):
     return (
-            len(report["dropped_empty_columns"])
-            + len(report["dropped_high_missing_columns"])
-            + len(report["dropped_single_value_columns"])
-            + len(report["dropped_id_columns"])
-            + len(report["dropped_high_cardinality_columns"])
+            len(report.get("dropped_empty_columns", []))
+            + len(report.get("dropped_high_missing_columns", []))
+            + len(report.get("dropped_single_value_columns", []))
+            + len(report.get("dropped_id_columns", []))
+            + len(report.get("dropped_high_cardinality_columns", []))
     )
 
 
@@ -692,52 +692,52 @@ if uploaded_file is not None:
             show_section_header("Preprocessing Review", "Inspect the processed dataset and the main preprocessing outcomes.")
 
             total_dropped_columns = count_total_dropped_columns(report)
-            total_missing_filled = len(report["filled_missing_numerical"]) + len(report["filled_missing_categorical"])
+            total_missing_filled = len(report.get("filled_missing_numerical", [])) + len(report.get("filled_missing_categorical", []))
 
-            help_duplicates = f"Removed duplicate rows count: {report['removed_duplicates']}"
+            help_duplicates = f"Removed duplicate rows count: {report.get('removed_duplicates', 0)}"
             help_dropped = (
                     "Dropped columns include: "
                     + build_help_text(
-                report["dropped_empty_columns"]
-                + report["dropped_high_missing_columns"]
-                + report["dropped_single_value_columns"]
-                + report["dropped_id_columns"]
-                + report["dropped_high_cardinality_columns"]
+                report.get("dropped_empty_columns", [])
+                + report.get("dropped_high_missing_columns", [])
+                + report.get("dropped_single_value_columns", [])
+                + report.get("dropped_id_columns", [])
+                + report.get("dropped_high_cardinality_columns", [])
             )
             )
-            help_rows_removed = f"Rows removed due to missing-value threshold: {report['removed_rows_due_to_missing']}"
+            help_rows_removed = f"Rows removed due to missing-value threshold: {report.get('removed_rows_due_to_missing', 0)}"
             help_missing = (
                     "Missing-handled columns: "
-                    + build_help_text(report["filled_missing_numerical"] + report["filled_missing_categorical"])
+                    + build_help_text(report.get("filled_missing_numerical", []) + report.get("filled_missing_categorical", []))
             )
             help_datetime = (
                     "Created datetime features: "
-                    + build_help_text(report["created_datetime_features"])
+                    + build_help_text(report.get("created_datetime_features", []))
             )
             help_encoded = (
                     "Encoded columns include ordinal + one-hot encoded columns: "
-                    + build_help_text(report["ordinal_encoded_columns"] + report["one_hot_encoded_columns"])
+                    + build_help_text(report.get("ordinal_encoded_columns", []) + report.get("one_hot_encoded_columns", []))
             )
 
             summary_col1, summary_col2, summary_col3 = st.columns(3)
-            summary_col1.metric("Duplicates Removed", report["removed_duplicates"], help=help_duplicates)
+            summary_col1.metric("Duplicates Removed", report.get("removed_duplicates", 0), help=help_duplicates)
             summary_col2.metric("Columns Dropped", total_dropped_columns, help=help_dropped)
-            summary_col3.metric("Rows Removed", report["removed_rows_due_to_missing"], help=help_rows_removed)
+            summary_col3.metric("Rows Removed", report.get("removed_rows_due_to_missing", 0), help=help_rows_removed)
 
             summary_col4, summary_col5, summary_col6 = st.columns(3)
             summary_col4.metric("Missing Columns Handled", total_missing_filled, help=help_missing)
-            summary_col5.metric("Datetime Features Created", len(report["created_datetime_features"]), help=help_datetime)
-            summary_col6.metric("Encoded Columns", len(report["ordinal_encoded_columns"]) + len(report["one_hot_encoded_columns"]), help=help_encoded)
+            summary_col5.metric("Datetime Features Created", len(report.get("created_datetime_features", [])), help=help_datetime)
+            summary_col6.metric("Encoded Columns", len(report.get("ordinal_encoded_columns", [])) + len(report.get("one_hot_encoded_columns", [])), help=help_encoded)
 
             if report.get("feature_reduction_applied"):
-                red_help_1 = "Low-variance columns removed: " + build_help_text(report["removed_low_variance_columns"])
-                red_help_2 = "Highly correlated columns removed: " + build_help_text(report["removed_high_correlation_columns"])
-                red_help_3 = "Lower-importance columns removed: " + build_help_text(report["removed_low_importance_columns"])
+                red_help_1 = "Low-variance columns removed: " + build_help_text(report.get("removed_low_variance_columns", []))
+                red_help_2 = "Highly correlated columns removed: " + build_help_text(report.get("removed_high_correlation_columns", []))
+                red_help_3 = "Lower-importance columns removed: " + build_help_text(report.get("removed_low_importance_columns", []))
 
                 red_col1, red_col2, red_col3 = st.columns(3)
-                red_col1.metric("Low-Variance Features Removed", len(report["removed_low_variance_columns"]), help=red_help_1)
-                red_col2.metric("Highly Correlated Features Removed", len(report["removed_high_correlation_columns"]), help=red_help_2)
-                red_col3.metric("Lower-Importance Features Removed", len(report["removed_low_importance_columns"]), help=red_help_3)
+                red_col1.metric("Low-Variance Features Removed", len(report.get("removed_low_variance_columns", [])), help=red_help_1)
+                red_col2.metric("Highly Correlated Features Removed", len(report.get("removed_high_correlation_columns", [])), help=red_help_2)
+                red_col3.metric("Lower-Importance Features Removed", len(report.get("removed_low_importance_columns", [])), help=red_help_3)
 
             st.markdown("### What was done?")
             st.write("- Duplicate rows were removed when found.")
@@ -757,61 +757,61 @@ if uploaded_file is not None:
 
             with st.expander("Detailed preprocessing report"):
                 st.subheader("Dataset Shape")
-                st.write(f"Initial shape: {report['initial_shape']}")
-                st.write(f"Final feature shape: {report['final_shape']}")
+                st.write(f"Initial shape: {report.get('initial_shape')}")
+                st.write(f"Final feature shape: {report.get('final_shape')}")
 
                 st.subheader("Selected Features")
-                if report["selected_feature_columns"] is None:
+                if report.get("selected_feature_columns") is None:
                     st.write("All available features were used.")
                 else:
-                    st.write(report["selected_feature_columns"])
+                    st.write(report.get("selected_feature_columns"))
 
                 st.subheader("Dropped Columns")
-                show_list("Empty Columns", report["dropped_empty_columns"])
-                show_list("High-Missing Columns", report["dropped_high_missing_columns"])
-                show_list("Single-Value Columns", report["dropped_single_value_columns"])
-                show_list("ID Columns", report["dropped_id_columns"])
-                show_list("High-Cardinality Columns", report["dropped_high_cardinality_columns"])
+                show_list("Empty Columns", report.get("dropped_empty_columns", []))
+                show_list("High-Missing Columns", report.get("dropped_high_missing_columns", []))
+                show_list("Single-Value Columns", report.get("dropped_single_value_columns", []))
+                show_list("ID Columns", report.get("dropped_id_columns", []))
+                show_list("High-Cardinality Columns", report.get("dropped_high_cardinality_columns", []))
 
                 st.subheader("Type Conversion")
-                show_list("Converted to Numeric", report["converted_to_numeric"])
-                show_list("Parsed Datetime Columns", report["parsed_datetime_columns"])
-                show_list("Created Datetime Features", report["created_datetime_features"])
+                show_list("Converted to Numeric", report.get("converted_to_numeric", []))
+                show_list("Parsed Datetime Columns", report.get("parsed_datetime_columns", []))
+                show_list("Created Datetime Features", report.get("created_datetime_features", []))
 
                 st.subheader("Missing Value Handling")
-                show_list("Filled Numerical Columns", report["filled_missing_numerical"])
-                show_list("Filled Categorical Columns", report["filled_missing_categorical"])
+                show_list("Filled Numerical Columns", report.get("filled_missing_numerical", []))
+                show_list("Filled Categorical Columns", report.get("filled_missing_categorical", []))
 
                 st.subheader("Encoding")
-                show_list("Auto-detected Ordinal Columns", report["auto_detected_ordinal_columns"])
-                show_list("User-selected Ordinal Columns", report["user_selected_ordinal_columns"])
-                show_list("User-defined Ordinal Columns", report["user_defined_ordinal_columns"])
-                show_list("Ordinal Columns That Could Not Be Safely Encoded", report["failed_user_ordinal_columns"])
-                show_list("Ordinal Encoded Columns", report["ordinal_encoded_columns"])
-                show_list("One-Hot Encoded Columns", report["one_hot_encoded_columns"])
+                show_list("Auto-detected Ordinal Columns", report.get("auto_detected_ordinal_columns", []))
+                show_list("User-selected Ordinal Columns", report.get("user_selected_ordinal_columns", []))
+                show_list("User-defined Ordinal Columns", report.get("user_defined_ordinal_columns", []))
+                show_list("Ordinal Columns That Could Not Be Safely Encoded", report.get("failed_user_ordinal_columns", []))
+                show_list("Ordinal Encoded Columns", report.get("ordinal_encoded_columns", []))
+                show_list("One-Hot Encoded Columns", report.get("one_hot_encoded_columns", []))
 
                 st.subheader("Outlier Handling")
                 outlier_df = build_outlier_dataframe(report)
                 st.dataframe(outlier_df, use_container_width=True)
-                show_list("Columns with Capped Extreme Outliers", report["capped_outlier_columns"])
+                show_list("Columns with Capped Extreme Outliers", report.get("capped_outlier_columns", []))
 
                 if report.get("feature_reduction_applied"):
                     st.subheader("Feature Reduction for Explainability")
-                    show_list("Protected Original Features", report["protected_original_features"])
-                    show_list("Protected Transformed Features", report["protected_transformed_features"])
-                    show_list("Removed Low-Variance Features", report["removed_low_variance_columns"])
-                    show_list("Removed Highly Correlated Features", report["removed_high_correlation_columns"])
-                    show_list("Removed Lower-Importance Features", report["removed_low_importance_columns"])
+                    show_list("Protected Original Features", report.get("protected_original_features", []))
+                    show_list("Protected Transformed Features", report.get("protected_transformed_features", []))
+                    show_list("Removed Low-Variance Features", report.get("removed_low_variance_columns", []))
+                    show_list("Removed Highly Correlated Features", report.get("removed_high_correlation_columns", []))
+                    show_list("Removed Lower-Importance Features", report.get("removed_low_importance_columns", []))
 
-                    if report["feature_importance_ranking"] is not None:
+                    if report.get("feature_importance_ranking") is not None:
                         st.write("Model-based feature importance ranking:")
-                        st.dataframe(report["feature_importance_ranking"].head(20), use_container_width=True)
+                        st.dataframe(report.get("feature_importance_ranking").head(20), use_container_width=True)
 
                 st.subheader("Target Information")
-                st.write(f"Target encoded: {report['target_encoded']}")
-                if report["target_classes"] is not None:
+                st.write(f"Target encoded: {report.get('target_encoded')}")
+                if report.get("target_classes") is not None:
                     st.write("Target classes:")
-                    for cls in report["target_classes"]:
+                    for cls in report.get("target_classes", []):
                         st.write(f"- {cls}")
 
             show_section_header("Feature Relationship Overview", "A direct view of linear relationships in the processed dataset before model-based explanations.")
@@ -855,8 +855,7 @@ if uploaded_file is not None:
 
             show_info_box(
                 "Choose the prediction type",
-                "Use Classification when you want the model to predict categories or labels, such as yes/no, low/medium/high, or class names. "
-                "Use Regression when you want the model to predict a numeric value, such as price, score, temperature, or quality value."
+                "Use Classification when you want the model to predict categories or labels, such as yes/no, low/medium/high, or class names. Use Regression when you want the model to predict a numeric value, such as price, score, temperature, or quality value."
             )
 
             auto_label = f"Auto-detect (recommended: {detected_problem_type.capitalize()})"
@@ -912,7 +911,7 @@ if uploaded_file is not None:
 
             if st.button("Train Models"):
                 with st.spinner("Training models..."):
-                    class_labels = report["target_label_mapping"] if report["target_label_mapping"] is not None else report["target_classes"]
+                    class_labels = report.get("target_label_mapping") or report.get("target_classes")
 
                     problem_type, results_df, detailed_results = train_and_evaluate_models(
                         X=X,
