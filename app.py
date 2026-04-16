@@ -31,7 +31,7 @@ st.set_page_config(
     page_title="Explainova",
     layout="wide"
 )
-
+st.write("DEPLOY VERSION CHECK - 2026-04-16 v2")
 st.markdown("""
 <style>
     :root {
