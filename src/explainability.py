@@ -5,9 +5,6 @@ import shap
 
 
 def _sanitize_feature_frame(X: pd.DataFrame) -> pd.DataFrame:
-    """
-    Ensure SHAP always receives a purely numeric, finite dataframe.
-    """
     if X is None or X.empty:
         raise ValueError("No feature data is available for SHAP analysis.")
 
@@ -31,7 +28,6 @@ def _sanitize_feature_frame(X: pd.DataFrame) -> pd.DataFrame:
             clean[col] = clean[col].fillna(median_val)
 
     clean = clean.astype(float)
-
     return clean
 
 
@@ -113,7 +109,7 @@ def plot_shap_importance_bar(feature_importance_df, top_n=12):
 
     plot_df = feature_importance_df.head(top_n).copy()
 
-    fig, ax = plt.subplots(figsize=(5.2, 3.6), dpi=140)
+    fig, ax = plt.subplots(figsize=(5.8, 3.8), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
     ax.set_facecolor("#FFFFFF")
 
@@ -148,7 +144,7 @@ def plot_shap_summary_figure(shap_values, X_explain, max_display=12):
     shap_values = np.array(shap_values, dtype=float)
 
     plt.close("all")
-    fig = plt.figure(figsize=(6.8, 4.5), dpi=140)
+    fig = plt.figure(figsize=(7.6, 4.5), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
 
     shap.summary_plot(
@@ -160,7 +156,7 @@ def plot_shap_summary_figure(shap_values, X_explain, max_display=12):
     )
 
     current_fig = plt.gcf()
-    current_fig.set_size_inches(6.8, 4.5)
+    current_fig.set_size_inches(7.6, 4.5)
     current_fig.patch.set_facecolor("#F6F8FC")
     plt.tight_layout()
     return current_fig
@@ -169,25 +165,24 @@ def plot_shap_summary_figure(shap_values, X_explain, max_display=12):
 def get_shap_selection_guidance(problem_type, has_roc_auc=False):
     if problem_type == "classification":
         text = (
-            "Choose the model you want to explain based on the metric that matters most for your goal. "
-            "If avoiding false positives is more important, you may prefer a model with stronger precision. "
-            "If detecting as many true positives as possible matters more, recall may be more important. "
-            "If you want a balance between the two, F1 Score is a good reference."
+            "Choose the model you want to explain according to the kind of decision you care about most. "
+            "If false positives would create unnecessary risk or cost, a model with stronger precision may be more suitable. "
+            "If missing true positives would be more harmful, a model with stronger recall may be a better choice. "
+            "If you want a more balanced trade-off between the two, F1 Score is usually a good reference."
         )
         if has_roc_auc:
-            text += " In binary classification, ROC AUC can also help when class separation matters across thresholds."
+            text += " In binary classification, ROC AUC can also help when overall class separation matters across thresholds."
         return text
 
     return (
-        "Choose the regression model you want to explain based on the result you trust most. "
-        "If overall explanatory strength matters, use R2 Score. "
-        "If you want prediction error in the original target units, focus on MAE or RMSE."
+        "Choose the regression model you want to explain based on the type of performance you trust most. "
+        "R2 Score is useful when you care about overall explanatory strength, while MAE and RMSE are better when you want to focus on prediction error size in the original target units."
     )
 
 
 def get_shap_intro_text():
     return (
-        "SHAP explains how each feature contributes to the model output. "
-        "Positive SHAP values push predictions upward, while negative SHAP values push them downward. "
-        "Larger absolute SHAP values indicate stronger influence on the model's decision."
+        "SHAP explains how each feature contributes to a model prediction. "
+        "A positive SHAP value pushes the prediction upward, while a negative SHAP value pushes it downward. "
+        "The larger the absolute SHAP value, the more strongly that feature influenced the model's output."
     )

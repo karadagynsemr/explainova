@@ -18,18 +18,18 @@ def _apply_clean_axis_style(ax):
 
 
 def plot_confusion_matrix_figure(confusion_matrix_array, class_labels):
-    fig, ax = plt.subplots(figsize=(4.2, 3.5), dpi=140)
+    fig, ax = plt.subplots(figsize=(4.1, 3.3), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
 
     im = ax.imshow(confusion_matrix_array, aspect="auto", cmap="Blues")
-    ax.set_title("Confusion Matrix", fontsize=10, pad=10)
-    ax.set_xlabel("Predicted", fontsize=9)
-    ax.set_ylabel("Actual", fontsize=9)
+    ax.set_title("Confusion Matrix", fontsize=10, pad=8)
+    ax.set_xlabel("Predicted", fontsize=8.5)
+    ax.set_ylabel("Actual", fontsize=8.5)
 
     ax.set_xticks(range(len(class_labels)))
     ax.set_yticks(range(len(class_labels)))
-    ax.set_xticklabels(class_labels, rotation=18, ha="right", fontsize=8)
-    ax.set_yticklabels(class_labels, fontsize=8)
+    ax.set_xticklabels(class_labels, rotation=18, ha="right", fontsize=7.5)
+    ax.set_yticklabels(class_labels, fontsize=7.5)
 
     max_val = confusion_matrix_array.max() if confusion_matrix_array.size > 0 else 0
 
@@ -37,7 +37,7 @@ def plot_confusion_matrix_figure(confusion_matrix_array, class_labels):
         for j in range(confusion_matrix_array.shape[1]):
             val = confusion_matrix_array[i, j]
             text_color = "white" if max_val > 0 and val > max_val * 0.55 else "#0F172A"
-            ax.text(j, i, str(val), ha="center", va="center", fontsize=8, color=text_color)
+            ax.text(j, i, str(val), ha="center", va="center", fontsize=7.5, color=text_color)
 
     ax.grid(False)
     for spine in ax.spines.values():
@@ -45,7 +45,7 @@ def plot_confusion_matrix_figure(confusion_matrix_array, class_labels):
 
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.outline.set_edgecolor("#CBD5E1")
-    cbar.ax.tick_params(labelsize=8, colors="#334155")
+    cbar.ax.tick_params(labelsize=7.5, colors="#334155")
 
     fig.tight_layout()
     return fig
@@ -57,7 +57,7 @@ def plot_single_metric_comparison_figure(results_df, metric_name):
 
     df = results_df.copy()
 
-    fig, ax = plt.subplots(figsize=(4.5, 3.0), dpi=140)
+    fig, ax = plt.subplots(figsize=(4.8, 3.2), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
 
     bars = ax.bar(
@@ -107,7 +107,7 @@ def plot_metric_grid(results_df, metrics):
 
 def plot_roc_curve_figure(detailed_results):
     has_any_roc = False
-    fig, ax = plt.subplots(figsize=(4.3, 3.5), dpi=140)
+    fig, ax = plt.subplots(figsize=(4.8, 3.8), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
 
     palette = ["#4F46E5", "#0EA5E9", "#10B981", "#F59E0B", "#EF4444"]
@@ -192,7 +192,7 @@ def plot_correlation_heatmap_figure(X, y, target_name="Target", top_n=10):
 
     corr_matrix = combined.corr(numeric_only=True)
 
-    fig, ax = plt.subplots(figsize=(4.7, 4.1), dpi=140)
+    fig, ax = plt.subplots(figsize=(5.2, 4.4), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
 
     im = ax.imshow(corr_matrix.values, cmap="coolwarm", vmin=-1, vmax=1, aspect="auto")

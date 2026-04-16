@@ -52,9 +52,19 @@ st.markdown("""
     }
 
     .main .block-container {
-        max-width: 1220px;
-        padding-top: 1.3rem;
+        max-width: 1380px;
+        padding-top: 1.2rem;
         padding-bottom: 2rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+
+    @media (max-width: 1200px) {
+        .main .block-container {
+            max-width: 100%;
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
     }
 
     h1, h2, h3, h4 {
@@ -68,13 +78,13 @@ st.markdown("""
 
     .hero-wrap {
         text-align: center;
-        margin-bottom: 1.4rem;
+        margin-bottom: 1.2rem;
     }
 
     .hero-card {
         background: linear-gradient(135deg, #6366F1 0%, #4F46E5 58%, #0EA5E9 100%);
         border-radius: 28px;
-        padding: 34px 30px;
+        padding: 32px 28px;
         margin-bottom: 6px;
         box-shadow: 0 18px 40px rgba(79, 70, 229, 0.18);
     }
@@ -101,8 +111,8 @@ st.markdown("""
         background: var(--card-bg);
         border: 1px solid var(--card-border);
         border-radius: 18px;
-        padding: 18px 18px 14px 18px;
-        margin-bottom: 18px;
+        padding: 16px 16px 12px 16px;
+        margin-bottom: 16px;
         box-shadow: 0 6px 20px rgba(15, 23, 42, 0.05);
     }
 
@@ -114,9 +124,9 @@ st.markdown("""
     }
 
     .section-subtitle {
-        font-size: 0.94rem;
+        font-size: 0.95rem;
         color: var(--text-soft);
-        margin-bottom: 0.9rem;
+        margin-bottom: 0.8rem;
     }
 
     .insight-box {
@@ -129,7 +139,7 @@ st.markdown("""
     }
 
     .insight-title {
-        font-size: 1.02rem;
+        font-size: 1.03rem;
         font-weight: 800;
         color: #1E293B;
         margin-bottom: 0.45rem;
@@ -137,7 +147,7 @@ st.markdown("""
 
     .insight-text {
         font-size: 1rem;
-        line-height: 1.72;
+        line-height: 1.74;
         color: #334155;
     }
 
@@ -149,7 +159,7 @@ st.markdown("""
         margin-top: 8px;
         margin-bottom: 8px;
         font-size: 1rem;
-        line-height: 1.7;
+        line-height: 1.72;
         color: #334155;
     }
 
@@ -157,11 +167,11 @@ st.markdown("""
         background: #F8FAFF;
         border: 1px solid #E2E8F0;
         border-radius: 14px;
-        padding: 12px 14px;
+        padding: 13px 15px;
         margin-top: 10px;
         margin-bottom: 10px;
-        font-size: 1rem;
-        line-height: 1.72;
+        font-size: 1.02rem;
+        line-height: 1.75;
         color: #334155;
     }
 
@@ -200,6 +210,7 @@ st.markdown("""
         font-weight: 700 !important;
         padding: 0.58rem 1rem !important;
         box-shadow: 0 8px 18px rgba(79, 70, 229, 0.18);
+        width: 100%;
     }
 
     .stButton > button:hover {
@@ -456,12 +467,6 @@ def should_offer_feature_reduction(df, row_threshold=10000, column_threshold=40,
     )
 
 
-def show_small_centered_plot(fig):
-    col1, col2, col3 = st.columns([1.2, 2.8, 1.2])
-    with col2:
-        st.pyplot(fig, use_container_width=False)
-
-
 def show_metric_plots(results_df, problem_type):
     if problem_type == "classification":
         metrics = ["Accuracy", "Precision", "Recall", "F1 Score"]
@@ -484,14 +489,13 @@ def show_metric_plots(results_df, problem_type):
 
         for col, metric in zip(cols, pair):
             with col:
-                st.pyplot(metric_figures[metric], use_container_width=False)
+                st.pyplot(metric_figures[metric], use_container_width=True)
                 show_metric_comment(get_metric_commentary(results_df, metric, problem_type))
 
 
 def parse_order_input(order_text):
     if not order_text:
         return []
-
     return [item.strip() for item in order_text.split(",") if item.strip()]
 
 
@@ -617,7 +621,7 @@ if uploaded_file is not None:
         if feature_reduction_available:
             show_info_box(
                 "Feature Reduction for Explainability",
-                "Because this dataset is relatively large, you can optionally reduce the feature set without breaking feature-level interpretability. "
+                "Because this dataset is relatively large, you can optionally reduce the feature set without breaking feature-level interpretability. This keeps real feature names, unlike PCA."
             )
 
             apply_feature_reduction = st.radio(
@@ -777,12 +781,10 @@ if uploaded_file is not None:
             if not corr_table.empty:
                 show_info_box(
                     "What this shows",
-                    "This section shows linear correlations between processed features and the target variable. "
-                    "Correlation values close to 1 or -1 indicate a stronger relationship, while values close to 0 indicate a weaker one. "
-                    "Positive values suggest that the feature tends to increase with the target, whereas negative values suggest an inverse relationship."
+                    "This section shows linear correlations between processed features and the target variable. Correlation values close to 1 or -1 indicate a stronger relationship, while values close to 0 indicate a weaker one. Positive values suggest that the feature tends to increase with the target, whereas negative values suggest an inverse relationship."
                 )
 
-                corr_col1, corr_col2 = st.columns([1.0, 1.0])
+                corr_col1, corr_col2 = st.columns([1.0, 1.1])
 
                 with corr_col1:
                     st.subheader("Top Feature–Target Correlations")
@@ -796,7 +798,7 @@ if uploaded_file is not None:
                         top_n=10
                     )
                     if heatmap_fig is not None:
-                        st.pyplot(heatmap_fig, use_container_width=False)
+                        st.pyplot(heatmap_fig, use_container_width=True)
 
             else:
                 st.info("A correlation-based overview could not be generated because no suitable numeric features were available after preprocessing.")
@@ -808,8 +810,7 @@ if uploaded_file is not None:
 
             show_info_box(
                 "Training mode guidance",
-                "Training a single model is faster and useful when you already have a preferred method. "
-                "Comparing multiple models takes longer, but it helps you understand which algorithm fits your dataset better before moving into deeper explainability."
+                "Training a single model is faster and useful when you already have a preferred method. Comparing multiple models takes longer, but it helps you understand which algorithm fits your dataset better before moving into deeper explainability."
             )
 
             training_mode_display = st.radio(
@@ -901,7 +902,7 @@ if uploaded_file is not None:
                 class_labels = selected_details.get("class_labels")
 
                 if cm is not None and class_labels is not None:
-                    show_small_centered_plot(plot_confusion_matrix_figure(cm, class_labels))
+                    st.pyplot(plot_confusion_matrix_figure(cm, class_labels), use_container_width=False)
                     show_info_box(
                         "Confusion Matrix Insight",
                         get_confusion_matrix_interpretation(cm, class_labels)
@@ -910,7 +911,7 @@ if uploaded_file is not None:
                 roc_fig = plot_roc_curve_figure(detailed_results)
                 if roc_fig is not None:
                     st.subheader("ROC Curve")
-                    show_small_centered_plot(roc_fig)
+                    st.pyplot(roc_fig, use_container_width=True)
                     show_info_box(
                         "ROC Curve Insight",
                         get_roc_interpretation(detailed_results)
@@ -957,18 +958,22 @@ if uploaded_file is not None:
 
                 importance_df = shap_outputs["feature_importance_df"]
 
-                shap_col1, shap_col2 = st.columns([1.0, 1.2])
+                shap_col1, shap_col2 = st.columns([1.0, 1.15])
 
                 with shap_col1:
                     st.subheader("Top SHAP Features")
                     st.dataframe(importance_df.head(12), use_container_width=True)
-                    show_chart_note("This table ranks features by their average absolute SHAP contribution. Higher values mean the feature has a stronger overall impact on the model's predictions.")
+                    show_chart_note(
+                        "This table ranks features by their average absolute SHAP contribution. A larger value means the feature has a stronger overall influence on the model across the analyzed samples. Features near the top are the ones the model relies on more consistently."
+                    )
 
                 with shap_col2:
                     shap_bar_fig = plot_shap_importance_bar(importance_df, top_n=12)
                     if shap_bar_fig is not None:
-                        st.pyplot(shap_bar_fig, use_container_width=False)
-                    show_chart_note("This chart visualizes the same ranking more intuitively. Longer bars indicate features that influence the model more strongly across the analyzed samples.")
+                        st.pyplot(shap_bar_fig, use_container_width=True)
+                    show_chart_note(
+                        "This bar chart presents the same feature importance ranking visually. Longer bars indicate stronger influence. It is useful when you want to quickly compare which variables matter most at the global model level."
+                    )
 
                 st.subheader("SHAP Summary Plot")
                 shap_summary_fig = plot_shap_summary_figure(
@@ -977,8 +982,10 @@ if uploaded_file is not None:
                     max_display=12
                 )
                 if shap_summary_fig is not None:
-                    show_small_centered_plot(shap_summary_fig)
-                show_chart_note("Each dot represents one sample. The horizontal position shows whether the feature pushes the prediction up or down, while color reflects the feature value. A wider spread suggests that the feature effect varies more strongly across samples.")
+                    st.pyplot(shap_summary_fig, use_container_width=True)
+                show_chart_note(
+                    "Each dot represents one sample for one feature. Dots further to the right push the prediction upward, while dots further to the left push it downward. Color represents the feature value itself, so you can also see whether high or low values tend to increase or decrease the model output."
+                )
 
     except Exception as e:
         st.error(f"An error occurred while processing the dataset: {e}")
