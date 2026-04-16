@@ -5,21 +5,53 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
 
-def is_id_column(column_name):
+def is_id_like_by_name(column_name):
     col = column_name.strip().lower()
 
     exact_matches = {
         "id", "patient_id", "sample_id", "record_id",
-        "user_id", "customer_id", "transaction_id"
+        "user_id", "customer_id", "transaction_id",
+        "case_id", "subject_id", "uid"
     }
 
     if col in exact_matches:
         return True
 
-    if col.endswith("_id"):
+    if col.endswith("_id") or col.startswith("id_"):
         return True
 
     return False
+
+
+def is_id_like_by_uniqueness(series, unique_ratio_threshold=0.98, min_rows=30):
+    non_null = series.dropna()
+
+    if len(non_null) < min_rows:
+        return False
+
+    unique_ratio = non_null.nunique() / len(non_null)
+
+    if unique_ratio < unique_ratio_threshold:
+        return False
+
+    if pd.api.types.is_numeric_dtype(series):
+        return True
+
+    if pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series):
+        avg_len = non_null.astype(str).str.len().mean()
+        return avg_len >= 4
+
+    return False
+
+
+def detect_id_like_columns(df):
+    detected = []
+
+    for col in df.columns:
+        if is_id_like_by_name(col) or is_id_like_by_uniqueness(df[col]):
+            detected.append(col)
+
+    return detected
 
 
 def try_convert_object_to_numeric(df, target_column, conversion_threshold=0.80):
@@ -369,17 +401,6 @@ def keep_top_k_important_features(X, y, problem_type, protected_columns=None, to
     return X[keep_columns].copy(), drop_columns, importance_df
 
 
-def detect_problem_type_from_target(y, unique_threshold=10):
-    if str(y.dtype) in ["object", "category", "bool"]:
-        return "classification"
-
-    unique_values = y.nunique()
-    if unique_values <= unique_threshold:
-        return "classification"
-
-    return "regression"
-
-
 def preprocess_data(
         df,
         target_column,
@@ -440,6 +461,7 @@ def preprocess_data(
         "filled_missing_categorical": [],
         "target_encoded": False,
         "target_classes": None,
+        "target_label_mapping": None,
         "outlier_report": {},
         "extreme_outlier_report": {},
         "capped_outlier_columns": [],
@@ -515,7 +537,7 @@ def preprocess_data(
     y = data[target_column].copy()
     X = data.drop(columns=[target_column]).copy()
 
-    id_columns = [col for col in X.columns if is_id_column(col)]
+    id_columns = detect_id_like_columns(X)
     X = X.drop(columns=id_columns, errors="ignore")
     report["dropped_id_columns"] = id_columns
 
@@ -621,16 +643,19 @@ def preprocess_data(
 
     if y.dtype == "object" or str(y.dtype) == "category" or str(y.dtype) == "bool":
         le = LabelEncoder()
+        original_classes = list(le.classes_) if hasattr(le, "classes_") else None
         y = pd.Series(le.fit_transform(y), name=target_column, index=y.index)
+        original_classes = list(le.classes_)
         report["target_encoded"] = True
-        report["target_classes"] = list(le.classes_)
+        report["target_classes"] = original_classes
+        report["target_label_mapping"] = {int(i): str(cls) for i, cls in enumerate(original_classes)}
 
     X = X.replace([np.inf, -np.inf], np.nan)
     X = X.fillna(X.median(numeric_only=True))
     X = X.astype(float)
 
     if apply_feature_reduction:
-        problem_type = detect_problem_type_from_target(y)
+        problem_type = "classification" if report["target_encoded"] else "regression"
         protected_transformed = resolve_protected_transformed_columns(
             protected_original_features=protected_original_features,
             transformed_columns=X.columns.tolist()

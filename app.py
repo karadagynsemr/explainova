@@ -360,6 +360,16 @@ def count_total_dropped_columns(report):
     )
 
 
+def build_help_text(items, default_text="No items recorded."):
+    if not items:
+        return default_text
+
+    joined = ", ".join(map(str, items))
+    if len(joined) > 350:
+        joined = joined[:347] + "..."
+    return joined
+
+
 def explain_preprocessing_step(title, explanation):
     st.markdown(f"**{title}**")
     st.write(explanation)
@@ -508,9 +518,16 @@ uploaded_file = st.file_uploader(
 if uploaded_file is not None:
     try:
         show_section_header("Dataset Preview", "Review the uploaded data before selecting the target column.")
+
         df = load_dataset(uploaded_file)
 
-        st.dataframe(df.head(), use_container_width=True)
+        preview_rows = st.selectbox(
+            "How many rows would you like to preview?",
+            options=[5, 10, 15, 20],
+            index=0
+        )
+
+        st.dataframe(df.head(preview_rows), use_container_width=True)
 
         col1, col2, col3 = st.columns(3)
         col1.metric("Rows", df.shape[0])
@@ -677,21 +694,50 @@ if uploaded_file is not None:
             total_dropped_columns = count_total_dropped_columns(report)
             total_missing_filled = len(report["filled_missing_numerical"]) + len(report["filled_missing_categorical"])
 
+            help_duplicates = f"Removed duplicate rows count: {report['removed_duplicates']}"
+            help_dropped = (
+                    "Dropped columns include: "
+                    + build_help_text(
+                report["dropped_empty_columns"]
+                + report["dropped_high_missing_columns"]
+                + report["dropped_single_value_columns"]
+                + report["dropped_id_columns"]
+                + report["dropped_high_cardinality_columns"]
+            )
+            )
+            help_rows_removed = f"Rows removed due to missing-value threshold: {report['removed_rows_due_to_missing']}"
+            help_missing = (
+                    "Missing-handled columns: "
+                    + build_help_text(report["filled_missing_numerical"] + report["filled_missing_categorical"])
+            )
+            help_datetime = (
+                    "Created datetime features: "
+                    + build_help_text(report["created_datetime_features"])
+            )
+            help_encoded = (
+                    "Encoded columns include ordinal + one-hot encoded columns: "
+                    + build_help_text(report["ordinal_encoded_columns"] + report["one_hot_encoded_columns"])
+            )
+
             summary_col1, summary_col2, summary_col3 = st.columns(3)
-            summary_col1.metric("Duplicates Removed", report["removed_duplicates"])
-            summary_col2.metric("Columns Dropped", total_dropped_columns)
-            summary_col3.metric("Rows Removed", report["removed_rows_due_to_missing"])
+            summary_col1.metric("Duplicates Removed", report["removed_duplicates"], help=help_duplicates)
+            summary_col2.metric("Columns Dropped", total_dropped_columns, help=help_dropped)
+            summary_col3.metric("Rows Removed", report["removed_rows_due_to_missing"], help=help_rows_removed)
 
             summary_col4, summary_col5, summary_col6 = st.columns(3)
-            summary_col4.metric("Missing Columns Handled", total_missing_filled)
-            summary_col5.metric("Datetime Features Created", len(report["created_datetime_features"]))
-            summary_col6.metric("Encoded Columns", len(report["ordinal_encoded_columns"]) + len(report["one_hot_encoded_columns"]))
+            summary_col4.metric("Missing Columns Handled", total_missing_filled, help=help_missing)
+            summary_col5.metric("Datetime Features Created", len(report["created_datetime_features"]), help=help_datetime)
+            summary_col6.metric("Encoded Columns", len(report["ordinal_encoded_columns"]) + len(report["one_hot_encoded_columns"]), help=help_encoded)
 
             if report.get("feature_reduction_applied"):
+                red_help_1 = "Low-variance columns removed: " + build_help_text(report["removed_low_variance_columns"])
+                red_help_2 = "Highly correlated columns removed: " + build_help_text(report["removed_high_correlation_columns"])
+                red_help_3 = "Lower-importance columns removed: " + build_help_text(report["removed_low_importance_columns"])
+
                 red_col1, red_col2, red_col3 = st.columns(3)
-                red_col1.metric("Low-Variance Features Removed", len(report["removed_low_variance_columns"]))
-                red_col2.metric("Highly Correlated Features Removed", len(report["removed_high_correlation_columns"]))
-                red_col3.metric("Lower-Importance Features Removed", len(report["removed_low_importance_columns"]))
+                red_col1.metric("Low-Variance Features Removed", len(report["removed_low_variance_columns"]), help=red_help_1)
+                red_col2.metric("Highly Correlated Features Removed", len(report["removed_high_correlation_columns"]), help=red_help_2)
+                red_col3.metric("Lower-Importance Features Removed", len(report["removed_low_importance_columns"]), help=red_help_3)
 
             st.markdown("### What was done?")
             st.write("- Duplicate rows were removed when found.")
@@ -803,10 +849,42 @@ if uploaded_file is not None:
             else:
                 st.info("A correlation-based overview could not be generated because no suitable numeric features were available after preprocessing.")
 
-            show_section_header("Model Training", "Choose whether to compare several models or focus on one.")
+            show_section_header("Model Training", "Choose the prediction type first, then decide whether to compare several models or focus on one.")
 
             detected_problem_type = detect_problem_type(y)
-            available_models = get_available_models(detected_problem_type)
+
+            show_info_box(
+                "Choose the prediction type",
+                "Use Classification when you want the model to predict categories or labels, such as yes/no, low/medium/high, or class names. "
+                "Use Regression when you want the model to predict a numeric value, such as price, score, temperature, or quality value."
+            )
+
+            auto_label = f"Auto-detect (recommended: {detected_problem_type.capitalize()})"
+
+            problem_type_display = st.radio(
+                "What kind of prediction do you want?",
+                options=[auto_label, "Classification", "Regression"],
+                index=0,
+                help="Choose Classification for category prediction and Regression for numeric value prediction."
+            )
+
+            if problem_type_display == auto_label:
+                chosen_problem_type = detected_problem_type
+            elif problem_type_display == "Classification":
+                chosen_problem_type = "classification"
+            else:
+                chosen_problem_type = "regression"
+
+            st.caption(
+                f"Selected mode: {chosen_problem_type.capitalize()} — "
+                + (
+                    "the model will predict categories or classes."
+                    if chosen_problem_type == "classification"
+                    else "the model will predict a numeric value."
+                )
+            )
+
+            available_models = get_available_models(chosen_problem_type)
 
             show_info_box(
                 "Training mode guidance",
@@ -834,14 +912,15 @@ if uploaded_file is not None:
 
             if st.button("Train Models"):
                 with st.spinner("Training models..."):
-                    class_labels = report["target_classes"] if report["target_encoded"] else None
+                    class_labels = report["target_label_mapping"] if report["target_label_mapping"] is not None else report["target_classes"]
 
                     problem_type, results_df, detailed_results = train_and_evaluate_models(
                         X=X,
                         y=y,
                         training_mode=training_mode,
                         selected_model_name=selected_model_name,
-                        class_labels=class_labels
+                        class_labels=class_labels,
+                        forced_problem_type=chosen_problem_type
                     )
 
                 st.session_state["problem_type"] = problem_type
@@ -911,7 +990,7 @@ if uploaded_file is not None:
                 roc_fig = plot_roc_curve_figure(detailed_results)
                 if roc_fig is not None:
                     st.subheader("ROC Curve")
-                    st.pyplot(roc_fig, use_container_width=True)
+                    st.pyplot(roc_fig, use_container_width=False)
                     show_info_box(
                         "ROC Curve Insight",
                         get_roc_interpretation(detailed_results)
@@ -982,7 +1061,7 @@ if uploaded_file is not None:
                     max_display=12
                 )
                 if shap_summary_fig is not None:
-                    st.pyplot(shap_summary_fig, use_container_width=True)
+                    st.pyplot(shap_summary_fig, use_container_width=False)
                 show_chart_note(
                     "Each dot represents one sample for one feature. Dots further to the right push the prediction upward, while dots further to the left push it downward. Color represents the feature value itself, so you can also see whether high or low values tend to increase or decrease the model output."
                 )

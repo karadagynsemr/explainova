@@ -18,7 +18,7 @@ def _apply_clean_axis_style(ax):
 
 
 def plot_confusion_matrix_figure(confusion_matrix_array, class_labels):
-    fig, ax = plt.subplots(figsize=(4.1, 3.3), dpi=140)
+    fig, ax = plt.subplots(figsize=(3.8, 3.1), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
 
     im = ax.imshow(confusion_matrix_array, aspect="auto", cmap="Blues")
@@ -37,7 +37,7 @@ def plot_confusion_matrix_figure(confusion_matrix_array, class_labels):
         for j in range(confusion_matrix_array.shape[1]):
             val = confusion_matrix_array[i, j]
             text_color = "white" if max_val > 0 and val > max_val * 0.55 else "#0F172A"
-            ax.text(j, i, str(val), ha="center", va="center", fontsize=7.5, color=text_color)
+            ax.text(j, i, str(val), ha="center", va="center", fontsize=7.2, color=text_color)
 
     ax.grid(False)
     for spine in ax.spines.values():
@@ -107,7 +107,7 @@ def plot_metric_grid(results_df, metrics):
 
 def plot_roc_curve_figure(detailed_results):
     has_any_roc = False
-    fig, ax = plt.subplots(figsize=(4.8, 3.8), dpi=140)
+    fig, ax = plt.subplots(figsize=(4.1, 3.2), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
 
     palette = ["#4F46E5", "#0EA5E9", "#10B981", "#F59E0B", "#EF4444"]
@@ -123,7 +123,7 @@ def plot_roc_curve_figure(detailed_results):
             roc_data["fpr"],
             roc_data["tpr"],
             label=f"{model_name} (AUC={roc_data['auc']:.3f})",
-            linewidth=2,
+            linewidth=1.9,
             color=palette[idx % len(palette)]
         )
 
@@ -131,14 +131,14 @@ def plot_roc_curve_figure(detailed_results):
         plt.close(fig)
         return None
 
-    ax.plot([0, 1], [0, 1], linestyle="--", color="#94A3B8", linewidth=1.4)
+    ax.plot([0, 1], [0, 1], linestyle="--", color="#94A3B8", linewidth=1.2)
     ax.set_title("ROC Curve", fontsize=10, pad=8)
-    ax.set_xlabel("False Positive Rate", fontsize=9)
-    ax.set_ylabel("True Positive Rate", fontsize=9)
+    ax.set_xlabel("False Positive Rate", fontsize=8.5)
+    ax.set_ylabel("True Positive Rate", fontsize=8.5)
 
     _apply_clean_axis_style(ax)
     ax.grid(True, color="#E2E8F0", linestyle="--", linewidth=0.8, alpha=0.8)
-    ax.legend(fontsize=7, loc="lower right", frameon=True, facecolor="white", edgecolor="#E2E8F0")
+    ax.legend(fontsize=6.8, loc="lower right", frameon=True, facecolor="white", edgecolor="#E2E8F0")
 
     fig.tight_layout()
     return fig

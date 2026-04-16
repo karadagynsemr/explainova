@@ -11,6 +11,7 @@ from sklearn.metrics import (
     confusion_matrix, roc_curve, roc_auc_score
 )
 
+from sklearn.linear_model import LinearRegression, Ridge, LogisticRegression
 from sklearn.svm import SVC, SVR
 from sklearn.ensemble import (
     RandomForestClassifier,
@@ -20,20 +21,44 @@ from sklearn.ensemble import (
 )
 
 
+def is_integer_like_numeric_target(y, tol=1e-9):
+    if not pd.api.types.is_numeric_dtype(y):
+        return False
+
+    y_clean = pd.Series(y).dropna().astype(float)
+    if y_clean.empty:
+        return False
+
+    return np.all(np.abs(y_clean - np.round(y_clean)) < tol)
+
+
 def detect_problem_type(y, unique_threshold=10):
-    if str(y.dtype) in ["object", "category", "bool"]:
+    y_series = pd.Series(y)
+
+    if str(y_series.dtype) in ["object", "category", "bool"]:
         return "classification"
 
-    unique_values = y.nunique()
+    if pd.api.types.is_numeric_dtype(y_series):
+        unique_values = y_series.nunique(dropna=True)
+        sample_size = len(y_series)
 
-    if unique_values <= unique_threshold:
-        return "classification"
+        integer_like = is_integer_like_numeric_target(y_series)
+        relative_threshold = max(10, int(sample_size * 0.05))
+
+        if integer_like and unique_values <= relative_threshold:
+            return "classification"
+
+        return "regression"
 
     return "regression"
 
 
 def get_classification_models():
     return {
+        "Logistic Regression": Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", LogisticRegression(max_iter=2000, random_state=42))
+        ]),
         "SVM": Pipeline([
             ("scaler", StandardScaler()),
             ("model", SVC(probability=True, random_state=42))
@@ -45,6 +70,14 @@ def get_classification_models():
 
 def get_regression_models():
     return {
+        "Linear Regression": Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", LinearRegression())
+        ]),
+        "Ridge Regression": Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", Ridge(alpha=1.0))
+        ]),
         "SVR": Pipeline([
             ("scaler", StandardScaler()),
             ("model", SVR())
@@ -58,6 +91,33 @@ def get_available_models(problem_type):
     if problem_type == "classification":
         return get_classification_models()
     return get_regression_models()
+
+
+def resolve_class_labels(unique_classes, class_labels):
+    if class_labels is None:
+        return [str(cls) for cls in unique_classes]
+
+    if isinstance(class_labels, dict):
+        resolved = []
+        for cls in unique_classes:
+            resolved.append(str(class_labels.get(int(cls), cls)))
+        return resolved
+
+    if isinstance(class_labels, (list, tuple)) and len(class_labels) >= len(unique_classes):
+        try:
+            return [str(class_labels[int(cls)]) for cls in unique_classes]
+        except Exception:
+            return [str(cls) for cls in unique_classes]
+
+    return [str(cls) for cls in unique_classes]
+
+
+def choose_test_size(n_samples):
+    if n_samples < 30:
+        return 0.25
+    if n_samples < 100:
+        return 0.20
+    return 0.20
 
 
 def evaluate_classification_model(model, X_train, X_test, y_train, y_test, class_labels=None):
@@ -100,10 +160,7 @@ def evaluate_classification_model(model, X_train, X_test, y_train, y_test, class
         except Exception:
             roc_data = None
 
-    if class_labels is not None and len(class_labels) >= len(unique_classes):
-        resolved_class_labels = [str(class_labels[int(cls)]) for cls in unique_classes]
-    else:
-        resolved_class_labels = [str(cls) for cls in unique_classes]
+    resolved_class_labels = resolve_class_labels(unique_classes, class_labels)
 
     return {
         "metrics": metrics,
@@ -155,21 +212,27 @@ def train_single_model(
         X,
         y,
         model_name,
-        test_size=0.2,
+        test_size=None,
         random_state=42,
-        class_labels=None
+        class_labels=None,
+        forced_problem_type=None
 ):
-    problem_type = detect_problem_type(y)
+    problem_type = forced_problem_type if forced_problem_type else detect_problem_type(y)
     available_models = get_available_models(problem_type)
 
     if model_name not in available_models:
         raise ValueError(f"Selected model is not available for {problem_type}: {model_name}")
 
+    if test_size is None:
+        test_size = choose_test_size(len(X))
+
+    stratify_target = y if problem_type == "classification" and pd.Series(y).nunique() > 1 else None
+
     X_train, X_test, y_train, y_test = train_test_split(
         X, y,
         test_size=test_size,
         random_state=random_state,
-        stratify=y if problem_type == "classification" and y.nunique() > 1 else None
+        stratify=stratify_target
     )
 
     model = available_models[model_name]
@@ -190,18 +253,24 @@ def train_single_model(
 def train_multiple_models(
         X,
         y,
-        test_size=0.2,
+        test_size=None,
         random_state=42,
-        class_labels=None
+        class_labels=None,
+        forced_problem_type=None
 ):
-    problem_type = detect_problem_type(y)
+    problem_type = forced_problem_type if forced_problem_type else detect_problem_type(y)
     models = get_available_models(problem_type)
+
+    if test_size is None:
+        test_size = choose_test_size(len(X))
+
+    stratify_target = y if problem_type == "classification" and pd.Series(y).nunique() > 1 else None
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y,
         test_size=test_size,
         random_state=random_state,
-        stratify=y if problem_type == "classification" and y.nunique() > 1 else None
+        stratify=stratify_target
     )
 
     detailed_results = {}
@@ -226,9 +295,10 @@ def train_and_evaluate_models(
         y,
         training_mode="multiple",
         selected_model_name=None,
-        test_size=0.2,
+        test_size=None,
         random_state=42,
-        class_labels=None
+        class_labels=None,
+        forced_problem_type=None
 ):
     if training_mode == "single":
         if not selected_model_name:
@@ -240,7 +310,8 @@ def train_and_evaluate_models(
             model_name=selected_model_name,
             test_size=test_size,
             random_state=random_state,
-            class_labels=class_labels
+            class_labels=class_labels,
+            forced_problem_type=forced_problem_type
         )
 
     return train_multiple_models(
@@ -248,5 +319,6 @@ def train_and_evaluate_models(
         y=y,
         test_size=test_size,
         random_state=random_state,
-        class_labels=class_labels
+        class_labels=class_labels,
+        forced_problem_type=forced_problem_type
     )

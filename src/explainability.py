@@ -144,7 +144,7 @@ def plot_shap_summary_figure(shap_values, X_explain, max_display=12):
     shap_values = np.array(shap_values, dtype=float)
 
     plt.close("all")
-    fig = plt.figure(figsize=(7.6, 4.5), dpi=140)
+    fig = plt.figure(figsize=(7.1, 4.2), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
 
     shap.summary_plot(
@@ -156,7 +156,7 @@ def plot_shap_summary_figure(shap_values, X_explain, max_display=12):
     )
 
     current_fig = plt.gcf()
-    current_fig.set_size_inches(7.6, 4.5)
+    current_fig.set_size_inches(7.1, 4.2)
     current_fig.patch.set_facecolor("#F6F8FC")
     plt.tight_layout()
     return current_fig
