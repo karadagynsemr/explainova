@@ -26,6 +26,7 @@ from src.explainability import (
     get_shap_selection_guidance,
     get_shap_intro_text
 )
+from src.utils import generate_word_report
 
 st.set_page_config(
     page_title="Explainova",
@@ -107,9 +108,100 @@ st.markdown("""
         text-align: center;
     }
 
+    .stepper-wrap {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 20px;
+        padding: 18px 24px 14px 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+    }
+
+    .stepper {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .step-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        max-width: 180px;
+    }
+
+    .step-connector {
+        flex: 1;
+        height: 3px;
+        max-width: 90px;
+        border-radius: 2px;
+        background: #E2E8F0;
+        margin-bottom: 22px;
+        transition: background 0.3s ease;
+    }
+
+    .step-connector.done {
+        background: linear-gradient(90deg, #4F46E5, #6366F1);
+    }
+
+    .step-circle {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.88rem;
+        font-weight: 800;
+        transition: all 0.3s ease;
+    }
+
+    .step-circle.pending {
+        background: #F1F5F9;
+        border: 2px solid #CBD5E1;
+        color: #94A3B8;
+    }
+
+    .step-circle.active {
+        background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+        color: white;
+        box-shadow: 0 6px 16px rgba(79, 70, 229, 0.40);
+    }
+
+    .step-circle.done {
+        background: #4F46E5;
+        color: white;
+    }
+
+    .step-label {
+        font-size: 0.73rem;
+        font-weight: 600;
+        color: #94A3B8;
+        text-align: center;
+        line-height: 1.3;
+    }
+
+    .step-label.active {
+        color: #4F46E5;
+        font-weight: 800;
+    }
+
+    .step-label.done {
+        color: #4F46E5;
+    }
+
+    .section-divider {
+        border: none;
+        border-top: 2px solid #EEF2FF;
+        margin: 24px 0 16px 0;
+    }
+
     .section-box {
         background: var(--card-bg);
         border: 1px solid var(--card-border);
+        border-top: 3px solid #6366F1;
         border-radius: 18px;
         padding: 16px 16px 12px 16px;
         margin-bottom: 16px;
@@ -181,6 +273,28 @@ st.markdown("""
         border-radius: 14px;
         padding: 12px 14px;
         margin-top: 10px;
+        margin-bottom: 12px;
+    }
+
+    .download-card {
+        background: linear-gradient(135deg, #F8FAFF 0%, #EEF2FF 100%);
+        border: 1px solid #C7D2FE;
+        border-radius: 18px;
+        padding: 20px 22px;
+        margin-top: 16px;
+        margin-bottom: 8px;
+    }
+
+    .download-title {
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: #1E293B;
+        margin-bottom: 4px;
+    }
+
+    .download-subtitle {
+        font-size: 0.93rem;
+        color: #475569;
         margin-bottom: 12px;
     }
 
@@ -295,6 +409,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+# ── Session state helpers ───────────────────────────────────────────────────
+
 def reset_training_state():
     for key in [
         "problem_type",
@@ -303,10 +419,79 @@ def reset_training_state():
         "selected_training_mode",
         "selected_model_name",
         "shap_outputs",
-        "shap_model_name"
+        "shap_model_name",
+        "shap_bar_fig",
+        "shap_summary_fig",
     ]:
         if key in st.session_state:
             del st.session_state[key]
+
+
+def get_completed_steps() -> int:
+    """
+    Returns how many steps are completed:
+    0 = nothing completed
+    1 = data upload completed
+    2 = preprocessing completed
+    3 = model training completed
+    4 = SHAP analysis completed
+    """
+    if "shap_outputs" in st.session_state:
+        return 4
+    if "results_df" in st.session_state:
+        return 3
+    if "X_processed" in st.session_state:
+        return 2
+    if st.session_state.get("data_uploaded", False):
+        return 1
+    return 0
+
+
+def maybe_toast_upload(uploaded_file):
+    if uploaded_file is None:
+        return
+
+    current_name = uploaded_file.name
+    last_uploaded = st.session_state.get("last_uploaded_filename")
+
+    if last_uploaded != current_name:
+        st.session_state["last_uploaded_filename"] = current_name
+        st.session_state["data_uploaded"] = True
+        st.toast(f"Data upload completed: {current_name}", icon="📁")
+
+
+# ── UI component helpers ────────────────────────────────────────────────────
+
+def show_step_progress(completed_steps: int):
+    steps = ["Data Upload", "Preprocessing", "Model Training", "SHAP Analysis"]
+    icons = ["📁", "⚙️", "🤖", "🔍"]
+
+    html = '<div class="stepper-wrap"><div class="stepper">'
+
+    for i, (label, icon) in enumerate(zip(steps, icons), 1):
+        if i <= completed_steps:
+            circle_class, label_class, circle_content = "done", "done", "✓"
+        elif i == completed_steps + 1:
+            circle_class, label_class, circle_content = "active", "active", str(i)
+        else:
+            circle_class, label_class, circle_content = "pending", "", str(i)
+
+        if completed_steps == len(steps) and i > completed_steps:
+            circle_class, label_class, circle_content = "pending", "", str(i)
+
+        html += (
+            f'<div class="step-item">'
+            f'  <div class="step-circle {circle_class}">{circle_content}</div>'
+            f'  <div class="step-label {label_class}">{icon}<br>{label}</div>'
+            f'</div>'
+        )
+
+        if i < len(steps):
+            conn_class = "done" if i < completed_steps + 1 and i <= completed_steps else ""
+            html += f'<div class="step-connector {conn_class}"></div>'
+
+    html += '</div></div>'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def show_section_header(title, subtitle=None):
@@ -319,6 +504,10 @@ def show_section_header(title, subtitle=None):
         """,
         unsafe_allow_html=True
     )
+
+
+def show_section_divider():
+    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
 
 def show_info_box(title, text):
@@ -363,7 +552,6 @@ def count_total_dropped_columns(report):
 def build_help_text(items, default_text="No items recorded."):
     if not items:
         return default_text
-
     joined = ", ".join(map(str, items))
     if len(joined) > 350:
         joined = joined[:347] + "..."
@@ -457,24 +645,12 @@ def get_best_model_info(results_df, problem_type):
 
 def is_large_dataset(df, row_threshold=50000, column_threshold=100, cell_threshold=2_000_000):
     rows, cols = df.shape
-    total_cells = rows * cols
-
-    return (
-            rows >= row_threshold
-            or cols >= column_threshold
-            or total_cells >= cell_threshold
-    )
+    return rows >= row_threshold or cols >= column_threshold or rows * cols >= cell_threshold
 
 
 def should_offer_feature_reduction(df, row_threshold=10000, column_threshold=40, cell_threshold=300000):
     rows, cols = df.shape
-    total_cells = rows * cols
-
-    return (
-            rows >= row_threshold
-            or cols >= column_threshold
-            or total_cells >= cell_threshold
-    )
+    return rows >= row_threshold or cols >= column_threshold or rows * cols >= cell_threshold
 
 
 def show_metric_plots(results_df, problem_type):
@@ -495,7 +671,7 @@ def show_metric_plots(results_df, problem_type):
 
     for i in range(0, len(available_metrics), 2):
         cols = st.columns(2)
-        pair = available_metrics[i:i+2]
+        pair = available_metrics[i:i + 2]
 
         for col, metric in zip(cols, pair):
             with col:
@@ -509,6 +685,49 @@ def parse_order_input(order_text):
     return [item.strip() for item in order_text.split(",") if item.strip()]
 
 
+# ── Download report helpers ────────────────────────────────────────────────
+
+def show_download_section(target_column, report, results_df, problem_type,
+                          shap_outputs, shap_model_name, shap_bar_fig, shap_summary_fig):
+    st.markdown(
+        """
+        <div class="download-card">
+            <div class="download-title">📥 Download Analysis Report</div>
+            <div class="download-subtitle">
+                Export a full summary of preprocessing steps, model results, and SHAP
+                explanations as a Word document.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    try:
+        word_buf = generate_word_report(
+            target_column=target_column,
+            report=report,
+            results_df=results_df,
+            problem_type=problem_type,
+            shap_outputs=shap_outputs,
+            shap_model_name=shap_model_name,
+            shap_bar_fig=shap_bar_fig,
+            shap_summary_fig=shap_summary_fig,
+        )
+        st.download_button(
+            label="⬇️ Download as Word (.docx)",
+            data=word_buf,
+            file_name="explainova_report.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+        )
+    except ImportError:
+        st.warning("Word export requires python-docx. Install it with: pip install python-docx")
+    except Exception as e:
+        st.error(f"Word report could not be generated: {e}")
+
+
+# ── Main application ────────────────────────────────────────────────────────
+
 uploaded_file = st.file_uploader(
     "Upload your dataset",
     type=["csv", "xlsx", "xls", "tsv"],
@@ -517,6 +736,10 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     try:
+        maybe_toast_upload(uploaded_file)
+
+        show_step_progress(get_completed_steps())
+
         show_section_header("Dataset Preview", "Review the uploaded data before selecting the target column.")
 
         df = load_dataset(uploaded_file)
@@ -534,6 +757,7 @@ if uploaded_file is not None:
         col2.metric("Columns", df.shape[1])
         col3.metric("Missing Values", int(df.isnull().sum().sum()))
 
+        show_section_divider()
         show_section_header("Feature and Target Selection", "Choose the target column and decide whether to use all features or only selected ones.")
 
         feature_mode = st.radio(
@@ -560,11 +784,15 @@ if uploaded_file is not None:
                 help="Only the selected feature columns will be used during preprocessing and model training."
             )
 
-        ordinal_source_df = df if selected_feature_columns is None else df[selected_feature_columns + [target_column]]
+        ordinal_source_df = (
+            df if selected_feature_columns is None
+            else df[selected_feature_columns + [target_column]]
+        )
         ordinal_info = suggest_ordinal_columns(ordinal_source_df, target_column)
         all_categorical_columns = ordinal_info["categorical_columns"]
         auto_detected_ordinal_columns = ordinal_info["auto_detected_ordinal_columns"]
 
+        show_section_divider()
         show_section_header("Preprocessing Options", "Review the guidance and choose your preprocessing settings.")
 
         user_selected_ordinal_columns = []
@@ -585,6 +813,12 @@ if uploaded_file is not None:
             selectable_manual_ordinal_columns = [
                 col for col in all_categorical_columns if col not in auto_detected_ordinal_columns
             ]
+
+            if feature_mode == "Select features manually" and selected_feature_columns:
+                selectable_manual_ordinal_columns = [
+                    col for col in selectable_manual_ordinal_columns
+                    if col in selected_feature_columns
+                ]
 
             if selectable_manual_ordinal_columns:
                 user_selected_ordinal_columns = st.multiselect(
@@ -626,8 +860,13 @@ if uploaded_file is not None:
                         if parsed_order:
                             user_defined_ordinal_mappings[col] = parsed_order
 
-        large_dataset_flag = is_large_dataset(df)
-        feature_reduction_available = should_offer_feature_reduction(df)
+        if feature_mode == "Select features manually" and selected_feature_columns:
+            df_for_size = df[selected_feature_columns + [target_column]]
+        else:
+            df_for_size = df
+
+        large_dataset_flag = is_large_dataset(df_for_size)
+        feature_reduction_available = should_offer_feature_reduction(df_for_size)
 
         if large_dataset_flag:
             st.warning("This dataset is large. Preprocessing can still run, but model training may take longer.")
@@ -649,11 +888,33 @@ if uploaded_file is not None:
             )
 
             if apply_feature_reduction == "Yes":
+                protection_options = (
+                    selected_feature_columns
+                    if feature_mode == "Select features manually" and selected_feature_columns
+                    else available_feature_candidates
+                )
+
                 protected_original_features = st.multiselect(
                     "Are there any original features that must definitely be kept?",
-                    options=available_feature_candidates,
+                    options=protection_options,
                     help="Selected features will be protected during feature reduction whenever possible."
                 )
+
+                if feature_mode == "Select features manually" and selected_feature_columns:
+                    at_risk = [
+                        f for f in selected_feature_columns
+                        if f not in protected_original_features
+                    ]
+                    if at_risk:
+                        display_list = ", ".join(at_risk[:10])
+                        if len(at_risk) > 10:
+                            display_list += f" … (+{len(at_risk) - 10} more)"
+                        st.warning(
+                            f"⚠️ **Feature reduction warning:** The following features you selected manually "
+                            f"are **not** protected and may be removed by feature reduction:\n\n"
+                            f"**{display_list}**\n\n"
+                            "If you want to keep any of these, add them to the protected features list above."
+                        )
 
         if st.button("Run Preprocessing"):
             reset_training_state()
@@ -681,7 +942,8 @@ if uploaded_file is not None:
                 st.session_state["target_column"] = target_column
                 st.session_state["large_dataset_flag"] = large_dataset_flag
 
-                st.success("Preprocessing completed successfully.")
+                st.toast("Preprocessing completed successfully.", icon="⚙️")
+                st.rerun()
 
         if "X_processed" in st.session_state and "y_processed" in st.session_state:
             X = st.session_state["X_processed"]
@@ -689,6 +951,7 @@ if uploaded_file is not None:
             X_explain_reference = st.session_state["X_explain_reference"]
             report = st.session_state["preprocessing_report"]
 
+            show_section_divider()
             show_section_header("Preprocessing Review", "Inspect the processed dataset and the main preprocessing outcomes.")
 
             total_dropped_columns = count_total_dropped_columns(report)
@@ -814,6 +1077,7 @@ if uploaded_file is not None:
                     for cls in report.get("target_classes", []):
                         st.write(f"- {cls}")
 
+            show_section_divider()
             show_section_header("Feature Relationship Overview", "A direct view of linear relationships in the processed dataset before model-based explanations.")
 
             explain_X = X_explain_reference.copy()
@@ -849,6 +1113,7 @@ if uploaded_file is not None:
             else:
                 st.info("A correlation-based overview could not be generated because no suitable numeric features were available after preprocessing.")
 
+            show_section_divider()
             show_section_header("Model Training", "Choose the prediction type first, then decide whether to compare several models or focus on one.")
 
             detected_problem_type = detect_problem_type(y)
@@ -928,7 +1193,8 @@ if uploaded_file is not None:
                 st.session_state["selected_training_mode"] = training_mode
                 st.session_state["selected_model_name"] = selected_model_name
 
-                st.success("Model training completed successfully.")
+                st.toast("Model training completed successfully.", icon="🤖")
+                st.rerun()
 
         if (
                 "results_df" in st.session_state
@@ -941,6 +1207,7 @@ if uploaded_file is not None:
             detailed_results = st.session_state["detailed_results"]
             X_explain_reference = st.session_state["X_explain_reference"]
 
+            show_section_divider()
             show_section_header("Results Dashboard", "Review model results, metric comparisons, and classification visuals.")
 
             st.write(f"Detected problem type: **{problem_type.capitalize()}**")
@@ -995,6 +1262,7 @@ if uploaded_file is not None:
                         get_roc_interpretation(detailed_results)
                     )
 
+            show_section_divider()
             show_section_header("SHAP Explainability", "Select the model you want to interpret after reviewing the evaluation results.")
 
             show_info_box(
@@ -1021,12 +1289,27 @@ if uploaded_file is not None:
                         max_explain_samples=200
                     )
 
+                    importance_df_cached = shap_outputs["feature_importance_df"]
+                    bar_fig_cached = plot_shap_importance_bar(importance_df_cached, top_n=12)
+                    summary_fig_cached = plot_shap_summary_figure(
+                        shap_outputs["shap_values"],
+                        shap_outputs["X_explain"],
+                        max_display=12
+                    )
+
                     st.session_state["shap_model_name"] = shap_model_name
                     st.session_state["shap_outputs"] = shap_outputs
+                    st.session_state["shap_bar_fig"] = bar_fig_cached
+                    st.session_state["shap_summary_fig"] = summary_fig_cached
+
+                st.toast("SHAP analysis completed successfully.", icon="🔍")
+                st.rerun()
 
             if "shap_outputs" in st.session_state:
                 shap_outputs = st.session_state["shap_outputs"]
                 shap_model_name = st.session_state.get("shap_model_name", "Selected Model")
+                shap_bar_fig = st.session_state.get("shap_bar_fig")
+                shap_summary_fig = st.session_state.get("shap_summary_fig")
 
                 st.subheader(f"SHAP Results for {shap_model_name}")
                 show_info_box(
@@ -1046,7 +1329,6 @@ if uploaded_file is not None:
                     )
 
                 with shap_col2:
-                    shap_bar_fig = plot_shap_importance_bar(importance_df, top_n=12)
                     if shap_bar_fig is not None:
                         st.pyplot(shap_bar_fig, use_container_width=True)
                     show_chart_note(
@@ -1054,15 +1336,22 @@ if uploaded_file is not None:
                     )
 
                 st.subheader("SHAP Summary Plot")
-                shap_summary_fig = plot_shap_summary_figure(
-                    shap_outputs["shap_values"],
-                    shap_outputs["X_explain"],
-                    max_display=12
-                )
                 if shap_summary_fig is not None:
                     st.pyplot(shap_summary_fig, use_container_width=False)
                 show_chart_note(
                     "Each dot represents one sample for one feature. Dots further to the right push the prediction upward, while dots further to the left push it downward. Color represents the feature value itself, so you can also see whether high or low values tend to increase or decrease the model output."
+                )
+
+                show_section_divider()
+                show_download_section(
+                    target_column=st.session_state.get("target_column", "target"),
+                    report=st.session_state.get("preprocessing_report", {}),
+                    results_df=results_df,
+                    problem_type=problem_type,
+                    shap_outputs=shap_outputs,
+                    shap_model_name=shap_model_name,
+                    shap_bar_fig=shap_bar_fig,
+                    shap_summary_fig=shap_summary_fig,
                 )
 
     except Exception as e:

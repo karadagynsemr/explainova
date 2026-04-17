@@ -31,6 +31,31 @@ def _sanitize_feature_frame(X: pd.DataFrame) -> pd.DataFrame:
     return clean
 
 
+def _truncate_feature_name(name, max_len=26):
+    text = str(name)
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."
+
+
+def _build_display_frame(X: pd.DataFrame, max_len=26) -> pd.DataFrame:
+    display_X = X.copy()
+    display_X.columns = [_truncate_feature_name(col, max_len=max_len) for col in display_X.columns]
+
+    seen = {}
+    unique_cols = []
+    for col in display_X.columns:
+        if col not in seen:
+            seen[col] = 1
+            unique_cols.append(col)
+        else:
+            seen[col] += 1
+            unique_cols.append(f"{col} ({seen[col]})")
+
+    display_X.columns = unique_cols
+    return display_X
+
+
 def sample_background_data(X, max_samples=100):
     if X.shape[0] <= max_samples:
         return X.copy()
@@ -108,13 +133,14 @@ def plot_shap_importance_bar(feature_importance_df, top_n=12):
         return None
 
     plot_df = feature_importance_df.head(top_n).copy()
+    plot_df["Display Feature"] = plot_df["Feature"].apply(lambda x: _truncate_feature_name(x, max_len=28))
 
-    fig, ax = plt.subplots(figsize=(5.8, 3.8), dpi=140)
+    fig, ax = plt.subplots(figsize=(6.4, 4.1), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
     ax.set_facecolor("#FFFFFF")
 
     ax.barh(
-        plot_df["Feature"][::-1],
+        plot_df["Display Feature"][::-1],
         plot_df["Mean |SHAP Value|"][::-1],
         color="#6366F1",
         edgecolor="#4F46E5",
@@ -135,7 +161,7 @@ def plot_shap_importance_bar(feature_importance_df, top_n=12):
     ax.grid(axis="x", color="#E2E8F0", linestyle="--", linewidth=0.8, alpha=0.8)
     ax.set_axisbelow(True)
 
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.34, right=0.97, top=0.88, bottom=0.16)
     return fig
 
 
@@ -143,22 +169,30 @@ def plot_shap_summary_figure(shap_values, X_explain, max_display=12):
     X_explain = _sanitize_feature_frame(X_explain)
     shap_values = np.array(shap_values, dtype=float)
 
+    display_X = _build_display_frame(X_explain, max_len=26)
+
     plt.close("all")
-    fig = plt.figure(figsize=(7.1, 4.2), dpi=140)
+    fig = plt.figure(figsize=(7.8, 4.8), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
 
     shap.summary_plot(
         shap_values,
-        X_explain,
+        display_X,
         max_display=max_display,
         show=False,
         plot_size=None
     )
 
     current_fig = plt.gcf()
-    current_fig.set_size_inches(7.1, 4.2)
+    current_fig.set_size_inches(7.8, 4.8)
     current_fig.patch.set_facecolor("#F6F8FC")
-    plt.tight_layout()
+
+    for ax in current_fig.axes:
+        ax.set_facecolor("#FFFFFF")
+        ax.tick_params(axis="y", labelsize=8)
+        ax.tick_params(axis="x", labelsize=8)
+
+    current_fig.subplots_adjust(left=0.32, right=0.96, top=0.90, bottom=0.16)
     return current_fig
 
 
