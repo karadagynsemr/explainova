@@ -226,7 +226,8 @@ def generate_word_report(
         for j, col in enumerate(cols):
             cell = tbl2.rows[0].cells[j]
             cell.text = col
-            cell.paragraphs[0].runs[0].bold = True
+            if cell.paragraphs and cell.paragraphs[0].runs:
+                cell.paragraphs[0].runs[0].bold = True
 
         for i, (_, row) in enumerate(results_df.iterrows()):
             for j, col in enumerate(cols):
@@ -262,7 +263,8 @@ def generate_word_report(
             for j, h in enumerate(["Feature", "Mean |SHAP Value|"]):
                 c = tbl3.rows[0].cells[j]
                 c.text = h
-                c.paragraphs[0].runs[0].bold = True
+                if c.paragraphs and c.paragraphs[0].runs:
+                    c.paragraphs[0].runs[0].bold = True
 
             for i, (_, row) in enumerate(top_df.iterrows()):
                 tbl3.rows[i + 1].cells[0].text = str(row["Feature"])

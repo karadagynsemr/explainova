@@ -23,6 +23,52 @@ def is_id_like_by_name(column_name):
     return False
 
 
+def _is_integer_like_series(series, tol=1e-9):
+    non_null = pd.Series(series).dropna()
+    if non_null.empty:
+        return False
+
+    if not pd.api.types.is_numeric_dtype(non_null):
+        return False
+
+    values = non_null.astype(float)
+    return bool(np.all(np.abs(values - np.round(values)) < tol))
+
+
+def is_probably_sequential_numeric_id(series):
+    non_null = pd.Series(series).dropna()
+    if len(non_null) < 30:
+        return False
+
+    if not pd.api.types.is_numeric_dtype(non_null):
+        return False
+
+    if not _is_integer_like_series(non_null):
+        return False
+
+    values = pd.Series(non_null).astype(float)
+    unique_ratio = values.nunique() / len(values)
+    if unique_ratio < 0.98:
+        return False
+
+    sorted_vals = np.sort(values.unique())
+    if len(sorted_vals) < 3:
+        return False
+
+    diffs = np.diff(sorted_vals)
+    if len(diffs) == 0:
+        return False
+
+    positive_diffs = diffs[diffs > 0]
+    if len(positive_diffs) == 0:
+        return False
+
+    dominant_step_share = (positive_diffs == positive_diffs[0]).mean()
+    is_monotonic = values.is_monotonic_increasing or values.is_monotonic_decreasing
+
+    return bool(is_monotonic or dominant_step_share >= 0.9)
+
+
 def is_id_like_by_uniqueness(series, unique_ratio_threshold=0.98, min_rows=30):
     non_null = series.dropna()
 
@@ -30,16 +76,16 @@ def is_id_like_by_uniqueness(series, unique_ratio_threshold=0.98, min_rows=30):
         return False
 
     unique_ratio = non_null.nunique() / len(non_null)
-
     if unique_ratio < unique_ratio_threshold:
         return False
 
     if pd.api.types.is_numeric_dtype(series):
-        return True
+        return is_probably_sequential_numeric_id(series)
 
     if pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series):
         avg_len = non_null.astype(str).str.len().mean()
-        return avg_len >= 4
+        has_letters = non_null.astype(str).str.contains(r"[A-Za-z]", regex=True).mean() > 0.3
+        return avg_len >= 6 or has_letters
 
     return False
 
@@ -708,6 +754,12 @@ def preprocess_data(
     X = X.fillna(X.median(numeric_only=True))
     X = X.astype(float)
 
+    if X.shape[1] == 0:
+        raise ValueError(
+            "No usable feature columns remained after preprocessing. "
+            "This usually happens when columns are dropped as ID-like, empty, constant, or high-cardinality."
+        )
+
     if apply_feature_reduction:
         problem_type = "classification" if report["target_encoded"] else "regression"
         protected_transformed = resolve_protected_transformed_columns(
@@ -741,6 +793,9 @@ def preprocess_data(
         )
         report["removed_low_importance_columns"] = dropped_low_importance
         report["feature_importance_ranking"] = importance_df
+
+        if X.shape[1] == 0:
+            raise ValueError("Feature reduction removed all columns. Try disabling feature reduction or protecting important features.")
 
     report["final_shape"] = (X.shape[0], X.shape[1])
 

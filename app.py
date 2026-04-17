@@ -45,19 +45,23 @@ st.markdown("""
         --primary: #4F46E5;
         --primary-dark: #4338CA;
         --accent: #0EA5E9;
+        --success: #10B981;
     }
 
     .stApp {
-        background: linear-gradient(180deg, #FAFBFE 0%, #F3F6FB 100%);
+        background:
+            radial-gradient(circle at top right, rgba(99,102,241,0.10), transparent 24%),
+            radial-gradient(circle at top left, rgba(14,165,233,0.08), transparent 22%),
+            linear-gradient(180deg, #FAFBFE 0%, #F3F6FB 100%);
         color: var(--text-main);
     }
 
     .main .block-container {
         max-width: 1380px;
-        padding-top: 1.2rem;
+        padding-top: 1.1rem;
         padding-bottom: 2rem;
-        padding-left: 2rem;
-        padding-right: 2rem;
+        padding-left: 1.6rem;
+        padding-right: 1.6rem;
     }
 
     @media (max-width: 1200px) {
@@ -79,15 +83,16 @@ st.markdown("""
 
     .hero-wrap {
         text-align: center;
-        margin-bottom: 1.2rem;
+        margin-bottom: 1.15rem;
     }
 
     .hero-card {
         background: linear-gradient(135deg, #6366F1 0%, #4F46E5 58%, #0EA5E9 100%);
-        border-radius: 28px;
-        padding: 32px 28px;
-        margin-bottom: 6px;
-        box-shadow: 0 18px 40px rgba(79, 70, 229, 0.18);
+        border-radius: 30px;
+        padding: 34px 28px 30px 28px;
+        margin-bottom: 8px;
+        box-shadow: 0 20px 42px rgba(79, 70, 229, 0.18);
+        border: 1px solid rgba(255,255,255,0.18);
     }
 
     .hero-title {
@@ -108,13 +113,25 @@ st.markdown("""
         text-align: center;
     }
 
-    .stepper-wrap {
-        background: #FFFFFF;
+    .status-strip {
+        background: rgba(255,255,255,0.78);
         border: 1px solid #E2E8F0;
-        border-radius: 20px;
-        padding: 18px 24px 14px 24px;
+        border-radius: 16px;
+        padding: 10px 14px;
+        margin-bottom: 16px;
+        backdrop-filter: blur(8px);
+        font-size: 0.95rem;
+        color: #334155;
+    }
+
+    .stepper-wrap {
+        background: rgba(255,255,255,0.92);
+        border: 1px solid #E2E8F0;
+        border-radius: 22px;
+        padding: 20px 24px 14px 24px;
         margin-bottom: 20px;
-        box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+        box-shadow: 0 8px 28px rgba(15, 23, 42, 0.05);
+        backdrop-filter: blur(8px);
     }
 
     .stepper {
@@ -127,39 +144,39 @@ st.markdown("""
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 6px;
+        gap: 7px;
         flex: 1;
-        max-width: 180px;
+        max-width: 190px;
     }
 
     .step-connector {
         flex: 1;
-        height: 3px;
-        max-width: 90px;
-        border-radius: 2px;
+        height: 4px;
+        max-width: 96px;
+        border-radius: 999px;
         background: #E2E8F0;
-        margin-bottom: 22px;
+        margin-bottom: 24px;
         transition: background 0.3s ease;
     }
 
     .step-connector.done {
-        background: linear-gradient(90deg, #4F46E5, #6366F1);
+        background: linear-gradient(90deg, #4F46E5, #22C55E);
     }
 
     .step-circle {
-        width: 38px;
-        height: 38px;
+        width: 42px;
+        height: 42px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 0.88rem;
+        font-size: 0.92rem;
         font-weight: 800;
         transition: all 0.3s ease;
     }
 
     .step-circle.pending {
-        background: #F1F5F9;
+        background: #F8FAFC;
         border: 2px solid #CBD5E1;
         color: #94A3B8;
     }
@@ -167,20 +184,21 @@ st.markdown("""
     .step-circle.active {
         background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
         color: white;
-        box-shadow: 0 6px 16px rgba(79, 70, 229, 0.40);
+        box-shadow: 0 8px 20px rgba(79, 70, 229, 0.32);
     }
 
     .step-circle.done {
-        background: #4F46E5;
+        background: linear-gradient(135deg, #22C55E 0%, #10B981 100%);
         color: white;
+        box-shadow: 0 8px 18px rgba(16, 185, 129, 0.22);
     }
 
     .step-label {
-        font-size: 0.73rem;
-        font-weight: 600;
+        font-size: 0.75rem;
+        font-weight: 700;
         color: #94A3B8;
         text-align: center;
-        line-height: 1.3;
+        line-height: 1.35;
     }
 
     .step-label.active {
@@ -189,7 +207,7 @@ st.markdown("""
     }
 
     .step-label.done {
-        color: #4F46E5;
+        color: #0F766E;
     }
 
     .section-divider {
@@ -199,30 +217,30 @@ st.markdown("""
     }
 
     .section-box {
-        background: var(--card-bg);
+        background: linear-gradient(180deg, #FFFFFF 0%, #FBFDFF 100%);
         border: 1px solid var(--card-border);
-        border-top: 3px solid #6366F1;
+        border-top: 4px solid #6366F1;
         border-radius: 18px;
         padding: 16px 16px 12px 16px;
         margin-bottom: 16px;
-        box-shadow: 0 6px 20px rgba(15, 23, 42, 0.05);
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
     }
 
     .section-title {
-        font-size: 1.08rem;
+        font-size: 1.1rem;
         font-weight: 800;
         color: var(--text-main);
-        margin-bottom: 0.2rem;
+        margin-bottom: 0.22rem;
     }
 
     .section-subtitle {
         font-size: 0.95rem;
         color: var(--text-soft);
-        margin-bottom: 0.8rem;
+        margin-bottom: 0.25rem;
     }
 
     .insight-box {
-        background: #F8FAFF;
+        background: linear-gradient(180deg, #F8FAFF 0%, #F4F8FF 100%);
         border: 1px solid #DCE6F7;
         border-radius: 16px;
         padding: 14px 16px;
@@ -243,27 +261,15 @@ st.markdown("""
         color: #334155;
     }
 
-    .metric-comment {
-        background: #F8FAFF;
+    .metric-comment, .chart-note {
+        background: linear-gradient(180deg, #F8FAFF 0%, #FFFFFF 100%);
         border: 1px solid #E2E8F0;
         border-radius: 14px;
         padding: 12px 14px;
-        margin-top: 8px;
-        margin-bottom: 8px;
-        font-size: 1rem;
-        line-height: 1.72;
-        color: #334155;
-    }
-
-    .chart-note {
-        background: #F8FAFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 14px;
-        padding: 13px 15px;
         margin-top: 10px;
         margin-bottom: 10px;
-        font-size: 1.02rem;
-        line-height: 1.75;
+        font-size: 1rem;
+        line-height: 1.72;
         color: #334155;
     }
 
@@ -283,27 +289,28 @@ st.markdown("""
         padding: 20px 22px;
         margin-top: 16px;
         margin-bottom: 8px;
+        box-shadow: 0 10px 24px rgba(79, 70, 229, 0.08);
     }
 
     .download-title {
-        font-size: 1.05rem;
+        font-size: 1.08rem;
         font-weight: 800;
         color: #1E293B;
         margin-bottom: 4px;
     }
 
     .download-subtitle {
-        font-size: 0.93rem;
+        font-size: 0.94rem;
         color: #475569;
         margin-bottom: 12px;
     }
 
     div[data-testid="stMetric"] {
-        background: #FFFFFF !important;
+        background: linear-gradient(180deg, #FFFFFF 0%, #FCFDFE 100%) !important;
         border: 1px solid #DCE6F2 !important;
         border-radius: 16px !important;
         padding: 10px 12px !important;
-        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05) !important;
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05) !important;
     }
 
     div[data-testid="stMetricLabel"] {
@@ -316,23 +323,26 @@ st.markdown("""
         font-weight: 800 !important;
     }
 
-    .stButton > button {
+    .stButton > button,
+    .stDownloadButton > button {
         background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%) !important;
         color: white !important;
         border: none !important;
         border-radius: 12px !important;
         font-weight: 700 !important;
-        padding: 0.58rem 1rem !important;
+        padding: 0.62rem 1rem !important;
         box-shadow: 0 8px 18px rgba(79, 70, 229, 0.18);
         width: 100%;
     }
 
-    .stButton > button:hover {
+    .stButton > button:hover,
+    .stDownloadButton > button:hover {
         background: linear-gradient(135deg, #4F46E5 0%, #4338CA 100%) !important;
         color: white !important;
     }
 
-    div[data-baseweb="select"] > div {
+    div[data-baseweb="select"] > div,
+    .stTextInput input {
         background: #FFFFFF !important;
         border: 1px solid #CBD5E1 !important;
         border-radius: 12px !important;
@@ -383,10 +393,11 @@ st.markdown("""
     }
 
     div[data-testid="stDataFrame"] {
-        border-radius: 14px;
+        border-radius: 16px;
         overflow: hidden;
         border: 1px solid #E2E8F0;
         background: white;
+        box-shadow: 0 6px 16px rgba(15,23,42,0.04);
     }
 
     div[data-testid="stRadio"] label {
@@ -401,15 +412,13 @@ st.markdown("""
     <div class="hero-card">
         <div class="hero-title">Explainova</div>
         <div class="hero-subtitle">
-            Turn raw data into a clearer machine learning workflow — with guided preprocessing,
-            model comparison, and results that are easier to understand.
+            Turn raw data into a clearer machine learning workflow with guided preprocessing,
+            cleaner visuals, stronger reporting, and model explanations that are easier to understand.
         </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-
-# ── Session state helpers ───────────────────────────────────────────────────
 
 def reset_training_state():
     for key in [
@@ -428,14 +437,6 @@ def reset_training_state():
 
 
 def get_completed_steps() -> int:
-    """
-    Returns how many steps are completed:
-    0 = nothing completed
-    1 = data upload completed
-    2 = preprocessing completed
-    3 = model training completed
-    4 = SHAP analysis completed
-    """
     if "shap_outputs" in st.session_state:
         return 4
     if "results_df" in st.session_state:
@@ -447,20 +448,36 @@ def get_completed_steps() -> int:
     return 0
 
 
-def maybe_toast_upload(uploaded_file):
+def sync_uploaded_file_state(uploaded_file):
     if uploaded_file is None:
+        st.session_state["data_uploaded"] = False
+        st.session_state["last_uploaded_filename"] = None
         return
 
     current_name = uploaded_file.name
-    last_uploaded = st.session_state.get("last_uploaded_filename")
-
-    if last_uploaded != current_name:
+    if st.session_state.get("last_uploaded_filename") != current_name:
         st.session_state["last_uploaded_filename"] = current_name
         st.session_state["data_uploaded"] = True
-        st.toast(f"Data upload completed: {current_name}", icon="📁")
+        reset_training_state()
+        for key in ["X_processed", "y_processed", "X_explain_reference", "preprocessing_report", "target_column", "large_dataset_flag"]:
+            if key in st.session_state:
+                del st.session_state[key]
 
 
-# ── UI component helpers ────────────────────────────────────────────────────
+def show_workflow_status(completed_steps: int):
+    if completed_steps == 0:
+        text = "Workflow status: waiting for dataset upload."
+    elif completed_steps == 1:
+        text = "Workflow status: data upload completed. Next step: preprocessing."
+    elif completed_steps == 2:
+        text = "Workflow status: preprocessing completed. Next step: model training."
+    elif completed_steps == 3:
+        text = "Workflow status: model training completed. Next step: SHAP analysis."
+    else:
+        text = "Workflow status: all workflow steps completed."
+
+    st.markdown(f'<div class="status-strip">{text}</div>', unsafe_allow_html=True)
+
 
 def show_step_progress(completed_steps: int):
     steps = ["Data Upload", "Preprocessing", "Model Training", "SHAP Analysis"]
@@ -471,12 +488,9 @@ def show_step_progress(completed_steps: int):
     for i, (label, icon) in enumerate(zip(steps, icons), 1):
         if i <= completed_steps:
             circle_class, label_class, circle_content = "done", "done", "✓"
-        elif i == completed_steps + 1:
+        elif i == completed_steps + 1 and completed_steps < len(steps):
             circle_class, label_class, circle_content = "active", "active", str(i)
         else:
-            circle_class, label_class, circle_content = "pending", "", str(i)
-
-        if completed_steps == len(steps) and i > completed_steps:
             circle_class, label_class, circle_content = "pending", "", str(i)
 
         html += (
@@ -487,7 +501,7 @@ def show_step_progress(completed_steps: int):
         )
 
         if i < len(steps):
-            conn_class = "done" if i < completed_steps + 1 and i <= completed_steps else ""
+            conn_class = "done" if i <= completed_steps else ""
             html += f'<div class="step-connector {conn_class}"></div>'
 
     html += '</div></div>'
@@ -604,26 +618,20 @@ def show_metric_explanations(problem_type, has_roc_auc=False):
     if problem_type == "classification":
         st.markdown("**Accuracy** — Shows the overall proportion of correct predictions.")
         st.markdown("**When it matters:** Useful when classes are balanced and all errors have similar importance.")
-
         st.markdown("**Precision** — Shows how many predicted positive cases were actually positive.")
         st.markdown("**When it matters:** Important when false positives are costly.")
-
         st.markdown("**Recall** — Shows how many real positive cases were successfully found.")
         st.markdown("**When it matters:** Important when missing a true positive is costly.")
-
         st.markdown("**F1 Score** — Balances precision and recall into a single value.")
         st.markdown("**When it matters:** Useful when both false positives and false negatives matter.")
-
         if has_roc_auc:
             st.markdown("**ROC AUC** — Measures how well the model separates two classes across different thresholds.")
             st.markdown("**When it matters:** Useful in binary classification when class separation matters.")
     else:
         st.markdown("**R2 Score** — Shows how well the model explains variation in the target.")
         st.markdown("**When it matters:** Good for understanding overall explanatory power.")
-
         st.markdown("**MAE** — The average absolute prediction error.")
         st.markdown("**When it matters:** Useful when you want an error measure in the original target units.")
-
         st.markdown("**RMSE** — Similar to MAE, but gives more weight to larger errors.")
         st.markdown("**When it matters:** Useful when large mistakes should be penalized more strongly.")
 
@@ -685,14 +693,12 @@ def parse_order_input(order_text):
     return [item.strip() for item in order_text.split(",") if item.strip()]
 
 
-# ── Download report helpers ────────────────────────────────────────────────
-
 def show_download_section(target_column, report, results_df, problem_type,
                           shap_outputs, shap_model_name, shap_bar_fig, shap_summary_fig):
     st.markdown(
         """
         <div class="download-card">
-            <div class="download-title">📥 Download Analysis Report</div>
+            <div class="download-title"> Download Analysis Report</div>
             <div class="download-subtitle">
                 Export a full summary of preprocessing steps, model results, and SHAP
                 explanations as a Word document.
@@ -714,7 +720,7 @@ def show_download_section(target_column, report, results_df, problem_type,
             shap_summary_fig=shap_summary_fig,
         )
         st.download_button(
-            label="⬇️ Download as Word (.docx)",
+            label="️ Download as Word (.docx)",
             data=word_buf,
             file_name="explainova_report.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -726,22 +732,19 @@ def show_download_section(target_column, report, results_df, problem_type,
         st.error(f"Word report could not be generated: {e}")
 
 
-# ── Main application ────────────────────────────────────────────────────────
-
 uploaded_file = st.file_uploader(
     "Upload your dataset",
     type=["csv", "xlsx", "xls", "tsv"],
     help="Supported file types: CSV, XLSX, XLS, TSV."
 )
 
+sync_uploaded_file_state(uploaded_file)
+show_workflow_status(get_completed_steps())
+show_step_progress(get_completed_steps())
+
 if uploaded_file is not None:
     try:
-        maybe_toast_upload(uploaded_file)
-
-        show_step_progress(get_completed_steps())
-
         show_section_header("Dataset Preview", "Review the uploaded data before selecting the target column.")
-
         df = load_dataset(uploaded_file)
 
         preview_rows = st.selectbox(
@@ -900,22 +903,6 @@ if uploaded_file is not None:
                     help="Selected features will be protected during feature reduction whenever possible."
                 )
 
-                if feature_mode == "Select features manually" and selected_feature_columns:
-                    at_risk = [
-                        f for f in selected_feature_columns
-                        if f not in protected_original_features
-                    ]
-                    if at_risk:
-                        display_list = ", ".join(at_risk[:10])
-                        if len(at_risk) > 10:
-                            display_list += f" … (+{len(at_risk) - 10} more)"
-                        st.warning(
-                            f"⚠️ **Feature reduction warning:** The following features you selected manually "
-                            f"are **not** protected and may be removed by feature reduction:\n\n"
-                            f"**{display_list}**\n\n"
-                            "If you want to keep any of these, add them to the protected features list above."
-                        )
-
         if st.button("Run Preprocessing"):
             reset_training_state()
 
@@ -941,8 +928,6 @@ if uploaded_file is not None:
                 st.session_state["preprocessing_report"] = report
                 st.session_state["target_column"] = target_column
                 st.session_state["large_dataset_flag"] = large_dataset_flag
-
-                st.toast("Preprocessing completed successfully.", icon="⚙️")
                 st.rerun()
 
         if "X_processed" in st.session_state and "y_processed" in st.session_state:
@@ -959,27 +944,27 @@ if uploaded_file is not None:
 
             help_duplicates = f"Removed duplicate rows count: {report.get('removed_duplicates', 0)}"
             help_dropped = (
-                    "Dropped columns include: "
-                    + build_help_text(
-                report.get("dropped_empty_columns", [])
-                + report.get("dropped_high_missing_columns", [])
-                + report.get("dropped_single_value_columns", [])
-                + report.get("dropped_id_columns", [])
-                + report.get("dropped_high_cardinality_columns", [])
-            )
+                    "Dropped columns include: " +
+                    build_help_text(
+                        report.get("dropped_empty_columns", [])
+                        + report.get("dropped_high_missing_columns", [])
+                        + report.get("dropped_single_value_columns", [])
+                        + report.get("dropped_id_columns", [])
+                        + report.get("dropped_high_cardinality_columns", [])
+                    )
             )
             help_rows_removed = f"Rows removed due to missing-value threshold: {report.get('removed_rows_due_to_missing', 0)}"
             help_missing = (
-                    "Missing-handled columns: "
-                    + build_help_text(report.get("filled_missing_numerical", []) + report.get("filled_missing_categorical", []))
+                    "Missing-handled columns: " +
+                    build_help_text(report.get("filled_missing_numerical", []) + report.get("filled_missing_categorical", []))
             )
             help_datetime = (
-                    "Created datetime features: "
-                    + build_help_text(report.get("created_datetime_features", []))
+                    "Created datetime features: " +
+                    build_help_text(report.get("created_datetime_features", []))
             )
             help_encoded = (
-                    "Encoded columns include ordinal + one-hot encoded columns: "
-                    + build_help_text(report.get("ordinal_encoded_columns", []) + report.get("one_hot_encoded_columns", []))
+                    "Encoded columns include ordinal + one-hot encoded columns: " +
+                    build_help_text(report.get("ordinal_encoded_columns", []) + report.get("one_hot_encoded_columns", []))
             )
 
             summary_col1, summary_col2, summary_col3 = st.columns(3)
@@ -992,28 +977,11 @@ if uploaded_file is not None:
             summary_col5.metric("Datetime Features Created", len(report.get("created_datetime_features", [])), help=help_datetime)
             summary_col6.metric("Encoded Columns", len(report.get("ordinal_encoded_columns", [])) + len(report.get("one_hot_encoded_columns", [])), help=help_encoded)
 
-            if report.get("feature_reduction_applied"):
-                red_help_1 = "Low-variance columns removed: " + build_help_text(report.get("removed_low_variance_columns", []))
-                red_help_2 = "Highly correlated columns removed: " + build_help_text(report.get("removed_high_correlation_columns", []))
-                red_help_3 = "Lower-importance columns removed: " + build_help_text(report.get("removed_low_importance_columns", []))
-
-                red_col1, red_col2, red_col3 = st.columns(3)
-                red_col1.metric("Low-Variance Features Removed", len(report.get("removed_low_variance_columns", [])), help=red_help_1)
-                red_col2.metric("Highly Correlated Features Removed", len(report.get("removed_high_correlation_columns", [])), help=red_help_2)
-                red_col3.metric("Lower-Importance Features Removed", len(report.get("removed_low_importance_columns", [])), help=red_help_3)
-
-            st.markdown("### What was done?")
-            st.write("- Duplicate rows were removed when found.")
-            st.write("- Problematic columns were detected and dropped when necessary.")
-            st.write("- Missing values were handled automatically.")
-            st.write("- Datetime columns were transformed into usable features.")
-            st.write("- Ordinal and nominal categorical features were encoded.")
-            st.write("- Extreme outliers were capped.")
-            if report.get("feature_reduction_applied"):
-                st.write("- Explainability-friendly feature reduction was applied on the final processed features.")
-
-            st.subheader("Processed Data Review")
-            st.dataframe(X_explain_reference.head(), use_container_width=True)
+            if X_explain_reference.empty:
+                st.warning("Processed data is empty after preprocessing. Please review the preprocessing report.")
+            else:
+                st.subheader("Processed Data Review")
+                st.dataframe(X_explain_reference.head(), use_container_width=True)
 
             with st.expander("Detailed preprocessing explanations"):
                 show_preprocessing_explanations(report)
@@ -1058,18 +1026,6 @@ if uploaded_file is not None:
                 st.dataframe(outlier_df, use_container_width=True)
                 show_list("Columns with Capped Extreme Outliers", report.get("capped_outlier_columns", []))
 
-                if report.get("feature_reduction_applied"):
-                    st.subheader("Feature Reduction for Explainability")
-                    show_list("Protected Original Features", report.get("protected_original_features", []))
-                    show_list("Protected Transformed Features", report.get("protected_transformed_features", []))
-                    show_list("Removed Low-Variance Features", report.get("removed_low_variance_columns", []))
-                    show_list("Removed Highly Correlated Features", report.get("removed_high_correlation_columns", []))
-                    show_list("Removed Lower-Importance Features", report.get("removed_low_importance_columns", []))
-
-                    if report.get("feature_importance_ranking") is not None:
-                        st.write("Model-based feature importance ranking:")
-                        st.dataframe(report.get("feature_importance_ranking").head(20), use_container_width=True)
-
                 st.subheader("Target Information")
                 st.write(f"Target encoded: {report.get('target_encoded')}")
                 if report.get("target_classes") is not None:
@@ -1091,7 +1047,7 @@ if uploaded_file is not None:
             if not corr_table.empty:
                 show_info_box(
                     "What this shows",
-                    "This section shows linear correlations between processed features and the target variable. Correlation values close to 1 or -1 indicate a stronger relationship, while values close to 0 indicate a weaker one. Positive values suggest that the feature tends to increase with the target, whereas negative values suggest an inverse relationship."
+                    "This section shows linear correlations between processed features and the target variable. Correlation values close to 1 or -1 indicate a stronger relationship, while values close to 0 indicate a weaker one."
                 )
 
                 corr_col1, corr_col2 = st.columns([1.0, 1.1])
@@ -1140,8 +1096,8 @@ if uploaded_file is not None:
                 chosen_problem_type = "regression"
 
             st.caption(
-                f"Selected mode: {chosen_problem_type.capitalize()} — "
-                + (
+                f"Selected mode: {chosen_problem_type.capitalize()} — " +
+                (
                     "the model will predict categories or classes."
                     if chosen_problem_type == "classification"
                     else "the model will predict a numeric value."
@@ -1149,11 +1105,6 @@ if uploaded_file is not None:
             )
 
             available_models = get_available_models(chosen_problem_type)
-
-            show_info_box(
-                "Training mode guidance",
-                "Training a single model is faster and useful when you already have a preferred method. Comparing multiple models takes longer, but it helps you understand which algorithm fits your dataset better before moving into deeper explainability."
-            )
 
             training_mode_display = st.radio(
                 "How would you like to train models?",
@@ -1171,30 +1122,25 @@ if uploaded_file is not None:
                     help="Pick one model to train."
                 )
 
-            if st.session_state.get("large_dataset_flag", False):
-                st.warning("Because the dataset is large, model training may take longer than usual.")
-
             if st.button("Train Models"):
-                with st.spinner("Training models..."):
-                    class_labels = report.get("target_label_mapping") or report.get("target_classes")
-
+                if X is None or X.empty:
+                    st.error("Model training cannot start because no usable feature columns are available after preprocessing.")
+                else:
                     problem_type, results_df, detailed_results = train_and_evaluate_models(
                         X=X,
                         y=y,
                         training_mode=training_mode,
                         selected_model_name=selected_model_name,
-                        class_labels=class_labels,
+                        class_labels=report.get("target_label_mapping") or report.get("target_classes"),
                         forced_problem_type=chosen_problem_type
                     )
 
-                st.session_state["problem_type"] = problem_type
-                st.session_state["results_df"] = results_df
-                st.session_state["detailed_results"] = detailed_results
-                st.session_state["selected_training_mode"] = training_mode
-                st.session_state["selected_model_name"] = selected_model_name
-
-                st.toast("Model training completed successfully.", icon="🤖")
-                st.rerun()
+                    st.session_state["problem_type"] = problem_type
+                    st.session_state["results_df"] = results_df
+                    st.session_state["detailed_results"] = detailed_results
+                    st.session_state["selected_training_mode"] = training_mode
+                    st.session_state["selected_model_name"] = selected_model_name
+                    st.rerun()
 
         if (
                 "results_df" in st.session_state
@@ -1248,19 +1194,13 @@ if uploaded_file is not None:
 
                 if cm is not None and class_labels is not None:
                     st.pyplot(plot_confusion_matrix_figure(cm, class_labels), use_container_width=False)
-                    show_info_box(
-                        "Confusion Matrix Insight",
-                        get_confusion_matrix_interpretation(cm, class_labels)
-                    )
+                    show_info_box("Confusion Matrix Insight", get_confusion_matrix_interpretation(cm, class_labels))
 
                 roc_fig = plot_roc_curve_figure(detailed_results)
                 if roc_fig is not None:
                     st.subheader("ROC Curve")
                     st.pyplot(roc_fig, use_container_width=False)
-                    show_info_box(
-                        "ROC Curve Insight",
-                        get_roc_interpretation(detailed_results)
-                    )
+                    show_info_box("ROC Curve Insight", get_roc_interpretation(detailed_results))
 
             show_section_divider()
             show_section_header("SHAP Explainability", "Select the model you want to interpret after reviewing the evaluation results.")
@@ -1277,32 +1217,29 @@ if uploaded_file is not None:
             )
 
             if st.button("Generate SHAP Analysis"):
-                with st.spinner("Generating SHAP explanations..."):
-                    selected_shap_details = detailed_results[shap_model_name]
-                    trained_model = selected_shap_details["trained_model"]
+                selected_shap_details = detailed_results[shap_model_name]
+                trained_model = selected_shap_details["trained_model"]
 
-                    shap_outputs = compute_shap_outputs(
-                        trained_model=trained_model,
-                        X_reference=X_explain_reference,
-                        problem_type=problem_type,
-                        max_background_samples=100,
-                        max_explain_samples=200
-                    )
+                shap_outputs = compute_shap_outputs(
+                    trained_model=trained_model,
+                    X_reference=X_explain_reference,
+                    problem_type=problem_type,
+                    max_background_samples=100,
+                    max_explain_samples=200
+                )
 
-                    importance_df_cached = shap_outputs["feature_importance_df"]
-                    bar_fig_cached = plot_shap_importance_bar(importance_df_cached, top_n=12)
-                    summary_fig_cached = plot_shap_summary_figure(
-                        shap_outputs["shap_values"],
-                        shap_outputs["X_explain"],
-                        max_display=12
-                    )
+                importance_df_cached = shap_outputs["feature_importance_df"]
+                bar_fig_cached = plot_shap_importance_bar(importance_df_cached, top_n=12)
+                summary_fig_cached = plot_shap_summary_figure(
+                    shap_outputs["shap_values"],
+                    shap_outputs["X_explain"],
+                    max_display=12
+                )
 
-                    st.session_state["shap_model_name"] = shap_model_name
-                    st.session_state["shap_outputs"] = shap_outputs
-                    st.session_state["shap_bar_fig"] = bar_fig_cached
-                    st.session_state["shap_summary_fig"] = summary_fig_cached
-
-                st.toast("SHAP analysis completed successfully.", icon="🔍")
+                st.session_state["shap_model_name"] = shap_model_name
+                st.session_state["shap_outputs"] = shap_outputs
+                st.session_state["shap_bar_fig"] = bar_fig_cached
+                st.session_state["shap_summary_fig"] = summary_fig_cached
                 st.rerun()
 
             if "shap_outputs" in st.session_state:
@@ -1312,10 +1249,7 @@ if uploaded_file is not None:
                 shap_summary_fig = st.session_state.get("shap_summary_fig")
 
                 st.subheader(f"SHAP Results for {shap_model_name}")
-                show_info_box(
-                    "What SHAP shows",
-                    get_shap_intro_text()
-                )
+                show_info_box("What SHAP shows", get_shap_intro_text())
 
                 importance_df = shap_outputs["feature_importance_df"]
 
@@ -1325,21 +1259,21 @@ if uploaded_file is not None:
                     st.subheader("Top SHAP Features")
                     st.dataframe(importance_df.head(12), use_container_width=True)
                     show_chart_note(
-                        "This table ranks features by their average absolute SHAP contribution. A larger value means the feature has a stronger overall influence on the model across the analyzed samples. Features near the top are the ones the model relies on more consistently."
+                        "This table ranks features by their average absolute SHAP contribution. A larger value means the feature has a stronger overall influence on the model across the analyzed samples."
                     )
 
                 with shap_col2:
                     if shap_bar_fig is not None:
                         st.pyplot(shap_bar_fig, use_container_width=True)
                     show_chart_note(
-                        "This bar chart presents the same feature importance ranking visually. Longer bars indicate stronger influence. It is useful when you want to quickly compare which variables matter most at the global model level."
+                        "This bar chart presents the same feature importance ranking visually. Longer bars indicate stronger influence."
                     )
 
                 st.subheader("SHAP Summary Plot")
                 if shap_summary_fig is not None:
                     st.pyplot(shap_summary_fig, use_container_width=False)
                 show_chart_note(
-                    "Each dot represents one sample for one feature. Dots further to the right push the prediction upward, while dots further to the left push it downward. Color represents the feature value itself, so you can also see whether high or low values tend to increase or decrease the model output."
+                    "Each dot represents one sample for one feature. Dots further to the right push the prediction upward, while dots further to the left push it downward."
                 )
 
                 show_section_divider()
