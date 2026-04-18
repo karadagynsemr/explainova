@@ -1162,7 +1162,7 @@ if uploaded_file is not None:
         if feature_reduction_available:
             show_info_box(
                 "Feature Reduction for Explainability",
-                "Because this dataset is relatively large, you can optionally reduce the feature set without breaking feature-level interpretability. This keeps real feature names, unlike PCA."
+                "Because this dataset is relatively large, you can optionally reduce the feature set without breaking feature-level interpretability."
             )
 
             apply_feature_reduction = st.radio(
