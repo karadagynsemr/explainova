@@ -20,6 +20,12 @@ from sklearn.ensemble import (
     GradientBoostingRegressor
 )
 
+try:
+    from xgboost import XGBClassifier, XGBRegressor
+    XGBOOST_AVAILABLE = True
+except Exception:
+    XGBOOST_AVAILABLE = False
+
 
 def is_integer_like_numeric_target(y, tol=1e-9):
     if not pd.api.types.is_numeric_dtype(y):
@@ -54,37 +60,62 @@ def detect_problem_type(y, unique_threshold=10):
 
 
 def get_classification_models():
-    return {
-        "Logistic Regression": Pipeline([
-            ("scaler", StandardScaler()),
-            ("model", LogisticRegression(max_iter=2000, random_state=42))
-        ]),
+    models = {}
+
+    if XGBOOST_AVAILABLE:
+        models["XGBoost"] = XGBClassifier(
+            n_estimators=250,
+            max_depth=6,
+            learning_rate=0.08,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            eval_metric="logloss",
+            random_state=42
+        )
+
+    models.update({
+        "Random Forest": RandomForestClassifier(random_state=42),
+        "Gradient Boosting": GradientBoostingClassifier(random_state=42),
         "SVM": Pipeline([
             ("scaler", StandardScaler()),
             ("model", SVC(probability=True, random_state=42))
         ]),
-        "Random Forest": RandomForestClassifier(random_state=42),
-        "Gradient Boosting": GradientBoostingClassifier(random_state=42)
-    }
+        "Logistic Regression": Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", LogisticRegression(max_iter=2000, random_state=42))
+        ]),
+    })
+
+    return models
 
 
 def get_regression_models():
-    return {
-        "Linear Regression": Pipeline([
+    models = {}
+
+    if XGBOOST_AVAILABLE:
+        models["XGBoost Regressor"] = XGBRegressor(
+            n_estimators=250,
+            max_depth=6,
+            learning_rate=0.08,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            random_state=42
+        )
+
+    models.update({
+        "Random Forest Regressor": RandomForestRegressor(random_state=42),
+        "Gradient Boosting Regressor": GradientBoostingRegressor(random_state=42),
+        "SVR": Pipeline([
             ("scaler", StandardScaler()),
-            ("model", LinearRegression())
+            ("model", SVR())
         ]),
         "Ridge Regression": Pipeline([
             ("scaler", StandardScaler()),
             ("model", Ridge(alpha=1.0))
         ]),
-        "SVR": Pipeline([
-            ("scaler", StandardScaler()),
-            ("model", SVR())
-        ]),
-        "Random Forest Regressor": RandomForestRegressor(random_state=42),
-        "Gradient Boosting Regressor": GradientBoostingRegressor(random_state=42)
-    }
+    })
+
+    return models
 
 
 def get_available_models(problem_type):

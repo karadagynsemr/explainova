@@ -116,16 +116,51 @@ def _add_table_explanation_lines(problem_type: str):
     if problem_type == "classification":
         return [
             "How to read this table:",
-            "- Higher Accuracy, Precision, Recall, and F1 Score usually indicate better performance.",
-            "- If ROC AUC is available, higher values indicate better class separation across thresholds.",
-            "- The best model is not always the one with the highest accuracy; consider the metric that matters most for your use case."
+            "- Higher Accuracy, Precision, Recall, and F1 Score usually indicate better overall performance.",
+            "- If ROC AUC is available, a higher value means cleaner class separation.",
+            "- The best model is not always just the one with the highest accuracy; the type of error that matters most to you also matters."
         ]
     return [
         "How to read this table:",
-        "- Higher R2 Score is better because it means the model explains more of the target variation.",
-        "- Lower MAE and RMSE are better because they indicate smaller prediction errors.",
+        "- Higher R2 Score means the model explains more of the target variation.",
+        "- Lower MAE and RMSE mean smaller prediction errors.",
         "- RMSE penalizes larger mistakes more strongly than MAE."
     ]
+
+
+def _add_dataframe_table(doc, df: pd.DataFrame, title: str = None):
+    if df is None or df.empty:
+        return
+
+    if title:
+        doc.add_paragraph(title)
+
+    table = doc.add_table(rows=1 + len(df), cols=len(df.columns))
+    table.style = "Light Grid Accent 1"
+
+    for j, col in enumerate(df.columns):
+        cell = table.rows[0].cells[j]
+        cell.text = str(col)
+        if cell.paragraphs and cell.paragraphs[0].runs:
+            cell.paragraphs[0].runs[0].bold = True
+
+    for i, (_, row) in enumerate(df.iterrows()):
+        for j, col in enumerate(df.columns):
+            table.rows[i + 1].cells[j].text = _fmt(row[col])
+
+    doc.add_paragraph()
+
+
+def _add_figure_to_doc(doc, fig, width_inches=5.8):
+    from docx.shared import Inches
+
+    if fig is None:
+        return
+
+    img_buf = BytesIO()
+    fig.savefig(img_buf, format="png", bbox_inches="tight", dpi=130)
+    img_buf.seek(0)
+    doc.add_picture(img_buf, width=Inches(width_inches))
 
 
 def generate_word_report(
@@ -137,9 +172,23 @@ def generate_word_report(
         shap_model_name: str = None,
         shap_bar_fig=None,
         shap_summary_fig=None,
+        corr_table: pd.DataFrame = None,
+        corr_heatmap_fig=None,
+        shap_waterfall_fig=None,
+        shap_effect_fig=None,
+        waterfall_note: str = None,
+        effect_note: str = None,
+        model_leaderboard_fig=None,
+        model_recommendation_text: str = None,
+        corr_profile_fig=None,
+        corr_profile_note: str = None,
+        local_contribution_df: pd.DataFrame = None,
+        local_contribution_fig=None,
+        feature_behavior_df: pd.DataFrame = None,
+        feature_behavior_fig=None,
 ) -> BytesIO:
     from docx import Document
-    from docx.shared import Pt, Inches, RGBColor
+    from docx.shared import Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     INDIGO = RGBColor(0x4F, 0x46, 0xE5)
@@ -168,14 +217,15 @@ def generate_word_report(
 
     doc.add_paragraph()
 
-    doc.add_heading("Dataset Information", level=1)
+    # ── Dataset Information ────────────────────────────────────────────────
+    doc.add_heading("Dataset Overview", level=1)
     initial = report.get("initial_shape", ("N/A", "N/A"))
     final = report.get("final_shape", ("N/A", "N/A"))
 
     dataset_note = doc.add_paragraph()
     dataset_note.add_run(
-        "This section compares the dataset before and after preprocessing so you can quickly see "
-        "how much cleaning, filtering, and transformation changed the working data."
+        "This section compares the dataset before and after preprocessing. "
+        "It helps you quickly see how much the cleaning and transformation steps changed the working data."
     )
 
     tbl = doc.add_table(rows=3, cols=2)
@@ -191,11 +241,12 @@ def generate_word_report(
 
     doc.add_paragraph()
 
+    # ── Preprocessing Summary ──────────────────────────────────────────────
     doc.add_heading("Preprocessing Summary", level=1)
     intro_p = doc.add_paragraph()
     intro_p.add_run(
-        "The following list summarizes the main data-preparation actions applied before model training. "
-        "These steps are important because they directly affect both model quality and interpretability."
+        "The list below summarizes the main data-preparation steps applied before model training. "
+        "These steps directly affect both model quality and how easy the results are to interpret."
     )
 
     for step in _build_preprocessing_steps(report):
@@ -204,46 +255,75 @@ def generate_word_report(
 
     doc.add_paragraph()
 
-    doc.add_heading("Model Training Results", level=1)
+    # ── Feature Relationship Overview ──────────────────────────────────────
+    if corr_table is not None and not corr_table.empty:
+        doc.add_heading("Feature Relationship Summary", level=1)
+
+        corr_intro = doc.add_paragraph()
+        corr_intro.add_run(
+            "This section summarizes the strongest linear relationships between processed features and the target. "
+            "Its purpose is to quickly highlight the variables that move most clearly with the target."
+        )
+
+        top_corr_df = corr_table[["Feature", "Correlation with Target"]].copy()
+        _add_dataframe_table(doc, top_corr_df)
+
+        if corr_profile_note:
+            corr_story = doc.add_paragraph()
+            corr_story.add_run(corr_profile_note)
+
+        if corr_profile_fig is not None:
+            _add_figure_to_doc(doc, corr_profile_fig, width_inches=5.8)
+
+        if corr_heatmap_fig is not None:
+            corr_note = doc.add_paragraph()
+            corr_note.add_run(
+                "The heatmap shows how the highlighted features move with one another and with the target. "
+                "Values closer to 1 or -1 indicate stronger linear relationships, while values near 0 indicate weaker ones."
+            )
+            _add_figure_to_doc(doc, corr_heatmap_fig, width_inches=5.8)
+
+        doc.add_paragraph()
+
+    # ── Model Results ──────────────────────────────────────────────────────
+    doc.add_heading("Model Results", level=1)
 
     summary = _get_best_model_summary(results_df, problem_type)
     if summary is not None:
         best_p = doc.add_paragraph()
-        best_p.add_run("Best overall model: ").bold = True
+        best_p.add_run("Leading model in the overall table: ").bold = True
         best_p.add_run(
             f"{summary['model_name']} based on {summary['metric_name']} = {summary['metric_value']:.4f}"
         )
+
+    if model_recommendation_text:
+        recommendation_p = doc.add_paragraph()
+        recommendation_p.add_run(model_recommendation_text)
+
+    if model_leaderboard_fig is not None:
+        leaderboard_note = doc.add_paragraph()
+        leaderboard_note.add_run(
+            "This chart ranks the models by the main success metric at a glance. "
+            "The model at the top is the strongest candidate for a first recommendation."
+        )
+        _add_figure_to_doc(doc, model_leaderboard_fig, width_inches=5.9)
 
     for line in _add_table_explanation_lines(problem_type):
         p = doc.add_paragraph(style="List Bullet" if line.startswith("-") else None)
         p.add_run(line[2:] if line.startswith("-") else line)
 
     if results_df is not None and not results_df.empty:
-        cols = results_df.columns.tolist()
-        tbl2 = doc.add_table(rows=1 + len(results_df), cols=len(cols))
-        tbl2.style = "Light Grid Accent 1"
+        _add_dataframe_table(doc, results_df)
 
-        for j, col in enumerate(cols):
-            cell = tbl2.rows[0].cells[j]
-            cell.text = col
-            if cell.paragraphs and cell.paragraphs[0].runs:
-                cell.paragraphs[0].runs[0].bold = True
-
-        for i, (_, row) in enumerate(results_df.iterrows()):
-            for j, col in enumerate(cols):
-                tbl2.rows[i + 1].cells[j].text = _fmt(row[col])
-
-    doc.add_paragraph()
-
+    # ── SHAP Explainability ────────────────────────────────────────────────
     if shap_outputs is not None:
-        doc.add_heading(f"SHAP Explainability - {shap_model_name}", level=1)
+        doc.add_heading(f"SHAP Explanations - {shap_model_name}", level=1)
 
         intro = doc.add_paragraph()
         intro.add_run(
-            "SHAP (SHapley Additive exPlanations) reveals how each feature contributes "
-            "to individual predictions. A positive SHAP value pushes the prediction "
-            "upward; a negative value pushes it downward. Larger absolute values "
-            "indicate stronger feature influence."
+            "SHAP shows which features influenced a model result and by how much. "
+            "Positive values push the result upward, while negative values pull it downward. "
+            "Larger absolute values mean stronger influence."
         )
 
         importance_df = shap_outputs.get("feature_importance_df")
@@ -252,49 +332,88 @@ def generate_word_report(
 
             shap_note = doc.add_paragraph()
             shap_note.add_run(
-                "This table ranks features by average absolute contribution. Features near the top "
-                "have a stronger and more consistent influence on predictions across the analyzed samples."
+                "This table ranks features by average impact strength. "
+                "Items near the top influence the result more strongly and more consistently across the analyzed samples."
             )
 
-            top_df = importance_df.head(12)
-            tbl3 = doc.add_table(rows=1 + len(top_df), cols=2)
-            tbl3.style = "Light Grid Accent 1"
-
-            for j, h in enumerate(["Feature", "Mean |SHAP Value|"]):
-                c = tbl3.rows[0].cells[j]
-                c.text = h
-                if c.paragraphs and c.paragraphs[0].runs:
-                    c.paragraphs[0].runs[0].bold = True
-
-            for i, (_, row) in enumerate(top_df.iterrows()):
-                tbl3.rows[i + 1].cells[0].text = str(row["Feature"])
-                tbl3.rows[i + 1].cells[1].text = f"{row['Mean |SHAP Value|']:.6f}"
+            top_df = importance_df.head(12).copy()
+            _add_dataframe_table(doc, top_df)
 
         if shap_bar_fig is not None:
-            doc.add_heading("SHAP Feature Importance Chart", level=2)
+            doc.add_heading("Impact Strength Chart", level=2)
             chart_note = doc.add_paragraph()
             chart_note.add_run(
-                "Longer bars indicate features with greater overall impact on the model output."
+                "Longer bars mean the feature has a stronger overall effect on the model result."
             )
-
-            img_buf = BytesIO()
-            shap_bar_fig.savefig(img_buf, format="png", bbox_inches="tight", dpi=130)
-            img_buf.seek(0)
-            doc.add_picture(img_buf, width=Inches(5.8))
+            _add_figure_to_doc(doc, shap_bar_fig, width_inches=5.8)
 
         if shap_summary_fig is not None:
-            doc.add_heading("SHAP Summary Plot", level=2)
+            doc.add_heading("Overall SHAP Distribution", level=2)
             summary_note = doc.add_paragraph()
             summary_note.add_run(
-                "Each dot represents one sample. Position on the x-axis shows whether that feature pushed "
-                "the prediction higher or lower, while color reflects the feature value."
+                "Each dot represents one sample. A dot's position to the right or left shows whether that feature pushed the result upward or downward."
+            )
+            _add_figure_to_doc(doc, shap_summary_fig, width_inches=6.1)
+
+        if shap_waterfall_fig is not None:
+            doc.add_heading("Why This One Result Happened", level=2)
+
+            intro_local = doc.add_paragraph()
+            intro_local.add_run(
+                "This chart explains one prediction step by step. "
+                "It starts from the model's usual baseline and shows which features pushed the result upward or downward."
             )
 
-            img_buf2 = BytesIO()
-            shap_summary_fig.savefig(img_buf2, format="png", bbox_inches="tight", dpi=130)
-            img_buf2.seek(0)
-            doc.add_picture(img_buf2, width=Inches(6.2))
+            if waterfall_note:
+                p = doc.add_paragraph()
+                p.add_run(waterfall_note)
 
+            _add_figure_to_doc(doc, shap_waterfall_fig, width_inches=5.6)
+
+        if local_contribution_fig is not None:
+            doc.add_heading("Main Drivers of This Result", level=2)
+            local_note = doc.add_paragraph()
+            local_note.add_run(
+                "This chart gives a quick visual summary of the features that mattered most for the selected example. "
+                "Bars moving right raise the result, while bars moving left lower it."
+            )
+            _add_figure_to_doc(doc, local_contribution_fig, width_inches=5.8)
+
+        if local_contribution_df is not None and not local_contribution_df.empty:
+            local_table_note = doc.add_paragraph()
+            local_table_note.add_run(
+                "The table below summarizes the strongest drivers of the same example numerically."
+            )
+            _add_dataframe_table(doc, local_contribution_df.head(6))
+
+        if shap_effect_fig is not None:
+            doc.add_heading("How One Feature Changes the Result", level=2)
+
+            intro_effect = doc.add_paragraph()
+            intro_effect.add_run(
+                "This chart shows how the model usually reacts when one feature changes. "
+                "It helps reveal whether larger or smaller values tend to increase or decrease the result."
+            )
+
+            if effect_note:
+                p = doc.add_paragraph()
+                p.add_run(effect_note)
+
+            _add_figure_to_doc(doc, shap_effect_fig, width_inches=5.5)
+
+        if feature_behavior_fig is not None:
+            doc.add_heading("Overall Behavior of Key Features", level=2)
+            feature_behavior_note = doc.add_paragraph()
+            feature_behavior_note.add_run(
+                "This chart summarizes the average impact strength and typical direction of the most important features. "
+                "It helps you quickly see which features behave more strongly and more consistently."
+            )
+            _add_figure_to_doc(doc, feature_behavior_fig, width_inches=5.9)
+
+        if feature_behavior_df is not None and not feature_behavior_df.empty:
+            _add_dataframe_table(doc, feature_behavior_df.head(8), title="Behavior summary table")
+
+    # ── Footer ─────────────────────────────────────────────────────────────
     doc.add_paragraph()
     footer_p = doc.add_paragraph()
     footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER

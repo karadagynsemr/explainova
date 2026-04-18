@@ -1,30 +1,58 @@
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def _apply_clean_axis_style(ax):
+PRIMARY = "#2563EB"
+PRIMARY_DARK = "#1D4ED8"
+SECONDARY = "#0EA5E9"
+SUCCESS = "#10B981"
+WARNING = "#F59E0B"
+DANGER = "#F97316"
+INK = "#0F172A"
+SLATE = "#334155"
+BORDER = "#CBD5E1"
+GRID = "#E2E8F0"
+FIG_BG = "#F6F8FC"
+
+
+def _apply_clean_axis_style(ax, grid_axis="y"):
     ax.set_facecolor("#FFFFFF")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("#CBD5E1")
-    ax.spines["bottom"].set_color("#CBD5E1")
-    ax.tick_params(axis="x", colors="#334155", labelsize=7)
-    ax.tick_params(axis="y", colors="#334155", labelsize=8)
-    ax.title.set_color("#0F172A")
-    ax.xaxis.label.set_color("#334155")
-    ax.yaxis.label.set_color("#334155")
-    ax.grid(axis="y", color="#E2E8F0", linestyle="--", linewidth=0.8, alpha=0.8)
+    ax.spines["left"].set_color(BORDER)
+    ax.spines["bottom"].set_color(BORDER)
+    ax.tick_params(axis="x", colors=SLATE, labelsize=7.5)
+    ax.tick_params(axis="y", colors=SLATE, labelsize=8)
+    ax.title.set_color(INK)
+    ax.xaxis.label.set_color(SLATE)
+    ax.yaxis.label.set_color(SLATE)
+    if grid_axis:
+        ax.grid(axis=grid_axis, color=GRID, linestyle="--", linewidth=0.8, alpha=0.85)
     ax.set_axisbelow(True)
 
 
+def _truncate_label(text, max_len=28):
+    text = str(text)
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."
+
+
+def _metric_info(problem_type):
+    if problem_type == "classification":
+        return "Accuracy", "Correct prediction rate"
+    return "R2 Score", "Explained variation"
+
+
 def plot_confusion_matrix_figure(confusion_matrix_array, class_labels):
-    fig, ax = plt.subplots(figsize=(3.8, 3.1), dpi=140)
-    fig.patch.set_facecolor("#F6F8FC")
+    fig, ax = plt.subplots(figsize=(3.6, 3.0), dpi=140)
+    fig.patch.set_facecolor(FIG_BG)
 
     im = ax.imshow(confusion_matrix_array, aspect="auto", cmap="Blues")
-    ax.set_title("Confusion Matrix", fontsize=10, pad=8)
-    ax.set_xlabel("Predicted", fontsize=8.5)
-    ax.set_ylabel("Actual", fontsize=8.5)
+    ax.set_title("Prediction distribution", fontsize=10.5, pad=8)
+    ax.set_xlabel("Predicted class", fontsize=8.5)
+    ax.set_ylabel("Actual class", fontsize=8.5)
 
     ax.set_xticks(range(len(class_labels)))
     ax.set_yticks(range(len(class_labels)))
@@ -36,16 +64,16 @@ def plot_confusion_matrix_figure(confusion_matrix_array, class_labels):
     for i in range(confusion_matrix_array.shape[0]):
         for j in range(confusion_matrix_array.shape[1]):
             val = confusion_matrix_array[i, j]
-            text_color = "white" if max_val > 0 and val > max_val * 0.55 else "#0F172A"
-            ax.text(j, i, str(val), ha="center", va="center", fontsize=7.2, color=text_color)
+            text_color = "white" if max_val > 0 and val > max_val * 0.55 else INK
+            ax.text(j, i, str(val), ha="center", va="center", fontsize=7.3, color=text_color)
 
     ax.grid(False)
     for spine in ax.spines.values():
-        spine.set_color("#CBD5E1")
+        spine.set_color(BORDER)
 
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.outline.set_edgecolor("#CBD5E1")
-    cbar.ax.tick_params(labelsize=7.5, colors="#334155")
+    cbar.outline.set_edgecolor(BORDER)
+    cbar.ax.tick_params(labelsize=7.5, colors=SLATE)
 
     fig.tight_layout()
     return fig
@@ -55,39 +83,39 @@ def plot_single_metric_comparison_figure(results_df, metric_name):
     if results_df.empty or metric_name not in results_df.columns:
         return None
 
-    df = results_df.copy()
+    df = results_df.copy().sort_values(metric_name, ascending=metric_name in ["MAE", "RMSE"])
+    colors = [PRIMARY if idx == 0 else SECONDARY for idx in range(len(df))]
 
-    fig, ax = plt.subplots(figsize=(4.8, 3.2), dpi=140)
-    fig.patch.set_facecolor("#F6F8FC")
+    fig, ax = plt.subplots(figsize=(4.0, 2.7), dpi=140)
+    fig.patch.set_facecolor(FIG_BG)
 
     bars = ax.bar(
-        df["Model"],
+        [_truncate_label(name, max_len=22) for name in df["Model"]],
         df[metric_name],
-        color="#6366F1",
-        edgecolor="#4F46E5",
+        color=colors,
+        edgecolor=PRIMARY_DARK,
         linewidth=0.8,
-        alpha=0.9
+        alpha=0.92
     )
 
-    ax.set_title(metric_name, fontsize=10, pad=8)
+    ax.set_title(f"{metric_name} comparison", fontsize=10, pad=8)
     ax.set_xlabel("")
-    ax.set_ylabel(metric_name, fontsize=8)
+    ax.set_ylabel(metric_name, fontsize=8.3)
 
     _apply_clean_axis_style(ax)
     plt.setp(ax.get_xticklabels(), rotation=28, ha="right", fontsize=7)
 
     for bar in bars:
         height = bar.get_height()
-        label = f"{height:.3f}"
         ax.annotate(
-            label,
+            f"{height:.3f}",
             xy=(bar.get_x() + bar.get_width() / 2, height),
             xytext=(0, 4),
             textcoords="offset points",
             ha="center",
             va="bottom",
             fontsize=7,
-            color="#334155"
+            color=SLATE
         )
 
     fig.tight_layout()
@@ -105,12 +133,65 @@ def plot_metric_grid(results_df, metrics):
     return figures
 
 
+def plot_model_leaderboard_figure(results_df, problem_type, top_n=6):
+    if results_df is None or results_df.empty:
+        return None
+
+    primary_metric, metric_label = _metric_info(problem_type)
+    if primary_metric not in results_df.columns:
+        return None
+
+    plot_df = (
+        results_df[["Model", primary_metric]]
+        .sort_values(primary_metric, ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+    plot_df["Display Model"] = plot_df["Model"].apply(lambda name: _truncate_label(name, max_len=26))
+
+    fig, ax = plt.subplots(figsize=(4.8, 2.9), dpi=140)
+    fig.patch.set_facecolor(FIG_BG)
+
+    colors = [PRIMARY] + [SECONDARY] * max(len(plot_df) - 1, 0)
+    bars = ax.barh(
+        plot_df["Display Model"][::-1],
+        plot_df[primary_metric][::-1],
+        color=colors[::-1],
+        edgecolor=PRIMARY_DARK,
+        linewidth=0.8,
+        alpha=0.92
+    )
+
+    ax.set_title("Overall model ranking", fontsize=10.5, pad=10)
+    ax.set_xlabel(metric_label, fontsize=8.5)
+    ax.set_ylabel("")
+    _apply_clean_axis_style(ax, grid_axis="x")
+
+    max_val = max(float(plot_df[primary_metric].max()), 0.001)
+    ax.set_xlim(left=min(0.0, float(plot_df[primary_metric].min()) * 1.05), right=max_val * 1.18)
+
+    for bar in bars:
+        value = bar.get_width()
+        ax.text(
+            value + (max_val * 0.02),
+            bar.get_y() + bar.get_height() / 2,
+            f"{value:.3f}",
+            va="center",
+            ha="left",
+            fontsize=7.3,
+            color=SLATE
+        )
+
+    fig.tight_layout()
+    return fig
+
+
 def plot_roc_curve_figure(detailed_results):
     has_any_roc = False
-    fig, ax = plt.subplots(figsize=(4.1, 3.2), dpi=140)
-    fig.patch.set_facecolor("#F6F8FC")
+    fig, ax = plt.subplots(figsize=(3.9, 3.0), dpi=140)
+    fig.patch.set_facecolor(FIG_BG)
 
-    palette = ["#4F46E5", "#0EA5E9", "#10B981", "#F59E0B", "#EF4444"]
+    palette = [PRIMARY, SECONDARY, SUCCESS, WARNING, "#EF4444"]
 
     for idx, (model_name, details) in enumerate(detailed_results.items()):
         roc_data = details.get("roc_data")
@@ -122,7 +203,7 @@ def plot_roc_curve_figure(detailed_results):
         ax.plot(
             roc_data["fpr"],
             roc_data["tpr"],
-            label=f"{model_name} (AUC={roc_data['auc']:.3f})",
+            label=f"{_truncate_label(model_name, 18)} (AUC={roc_data['auc']:.3f})",
             linewidth=1.9,
             color=palette[idx % len(palette)]
         )
@@ -132,13 +213,12 @@ def plot_roc_curve_figure(detailed_results):
         return None
 
     ax.plot([0, 1], [0, 1], linestyle="--", color="#94A3B8", linewidth=1.2)
-    ax.set_title("ROC Curve", fontsize=10, pad=8)
-    ax.set_xlabel("False Positive Rate", fontsize=8.5)
-    ax.set_ylabel("True Positive Rate", fontsize=8.5)
+    ax.set_title("Class separation performance", fontsize=10.5, pad=8)
+    ax.set_xlabel("False positive rate", fontsize=8.5)
+    ax.set_ylabel("True positive rate", fontsize=8.5)
 
-    _apply_clean_axis_style(ax)
-    ax.grid(True, color="#E2E8F0", linestyle="--", linewidth=0.8, alpha=0.8)
-    ax.legend(fontsize=6.8, loc="lower right", frameon=True, facecolor="white", edgecolor="#E2E8F0")
+    _apply_clean_axis_style(ax, grid_axis="both")
+    ax.legend(fontsize=6.8, loc="lower right", frameon=True, facecolor="white", edgecolor=GRID)
 
     fig.tight_layout()
     return fig
@@ -192,11 +272,11 @@ def plot_correlation_heatmap_figure(X, y, target_name="Target", top_n=10):
 
     corr_matrix = combined.corr(numeric_only=True)
 
-    fig, ax = plt.subplots(figsize=(5.2, 4.4), dpi=140)
-    fig.patch.set_facecolor("#F6F8FC")
+    fig, ax = plt.subplots(figsize=(4.8, 4.0), dpi=140)
+    fig.patch.set_facecolor(FIG_BG)
 
     im = ax.imshow(corr_matrix.values, cmap="coolwarm", vmin=-1, vmax=1, aspect="auto")
-    ax.set_title("Correlation Heatmap", fontsize=10, pad=10)
+    ax.set_title("Relationship heatmap", fontsize=10.5, pad=10)
 
     ax.set_xticks(range(len(corr_matrix.columns)))
     ax.set_yticks(range(len(corr_matrix.index)))
@@ -206,15 +286,153 @@ def plot_correlation_heatmap_figure(X, y, target_name="Target", top_n=10):
     for i in range(corr_matrix.shape[0]):
         for j in range(corr_matrix.shape[1]):
             val = corr_matrix.iloc[i, j]
-            text_color = "white" if abs(val) > 0.55 else "#0F172A"
+            text_color = "white" if abs(val) > 0.55 else INK
             ax.text(j, i, f"{val:.2f}", ha="center", va="center", fontsize=6.2, color=text_color)
 
     for spine in ax.spines.values():
-        spine.set_color("#CBD5E1")
+        spine.set_color(BORDER)
 
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.outline.set_edgecolor("#CBD5E1")
-    cbar.ax.tick_params(labelsize=8, colors="#334155")
+    cbar.outline.set_edgecolor(BORDER)
+    cbar.ax.tick_params(labelsize=8, colors=SLATE)
+
+    fig.tight_layout()
+    return fig
+
+
+def plot_correlation_profile_figure(corr_table, top_n=8):
+    if corr_table is None or corr_table.empty:
+        return None
+
+    plot_df = corr_table.head(top_n).copy()
+    plot_df["Display Feature"] = plot_df["Feature"].apply(lambda item: _truncate_label(item, max_len=24))
+    plot_df = plot_df.sort_values("Correlation with Target", ascending=True)
+
+    fig, ax = plt.subplots(figsize=(4.9, 3.1), dpi=140)
+    fig.patch.set_facecolor(FIG_BG)
+
+    colors = [PRIMARY if value >= 0 else DANGER for value in plot_df["Correlation with Target"]]
+    bars = ax.barh(
+        plot_df["Display Feature"],
+        plot_df["Correlation with Target"],
+        color=colors,
+        edgecolor="#CBD5E1",
+        linewidth=0.8,
+        alpha=0.95
+    )
+
+    ax.axvline(0, color="#94A3B8", linewidth=1.0)
+    ax.set_title("Strongest relationships with target", fontsize=10.5, pad=10)
+    ax.set_xlabel("Correlation", fontsize=8.5)
+    ax.set_ylabel("")
+    _apply_clean_axis_style(ax, grid_axis="x")
+
+    for bar, value in zip(bars, plot_df["Correlation with Target"]):
+        offset = 0.03 if value >= 0 else -0.03
+        ha = "left" if value >= 0 else "right"
+        ax.text(
+            value + offset,
+            bar.get_y() + bar.get_height() / 2,
+            f"{value:.2f}",
+            va="center",
+            ha=ha,
+            fontsize=7.2,
+            color=SLATE
+        )
+
+    fig.tight_layout()
+    return fig
+
+
+def plot_local_contribution_figure(local_contribution_df, top_n=6):
+    if local_contribution_df is None or local_contribution_df.empty:
+        return None
+
+    plot_df = local_contribution_df.head(top_n).copy()
+    plot_df["Display Feature"] = plot_df["Feature"].apply(lambda item: _truncate_label(item, max_len=24))
+    plot_df = plot_df.sort_values("SHAP Contribution", ascending=True)
+
+    fig, ax = plt.subplots(figsize=(5.0, 3.2), dpi=140)
+    fig.patch.set_facecolor(FIG_BG)
+
+    colors = [SUCCESS if value >= 0 else DANGER for value in plot_df["SHAP Contribution"]]
+    bars = ax.barh(
+        plot_df["Display Feature"],
+        plot_df["SHAP Contribution"],
+        color=colors,
+        edgecolor="#CBD5E1",
+        linewidth=0.8,
+        alpha=0.95
+    )
+
+    ax.axvline(0, color="#94A3B8", linewidth=1.0)
+    ax.set_title("Main drivers of this result", fontsize=10.5, pad=10)
+    ax.set_xlabel("Contribution direction and strength", fontsize=8.5)
+    ax.set_ylabel("")
+    _apply_clean_axis_style(ax, grid_axis="x")
+
+    max_width = max(np.abs(plot_df["SHAP Contribution"]).max(), 0.001)
+    for bar, value in zip(bars, plot_df["SHAP Contribution"]):
+        offset = max_width * 0.05
+        ha = "left" if value >= 0 else "right"
+        ax.text(
+            value + (offset if value >= 0 else -offset),
+            bar.get_y() + bar.get_height() / 2,
+            f"{value:.3f}",
+            va="center",
+            ha=ha,
+            fontsize=7.2,
+            color=SLATE
+        )
+
+    fig.tight_layout()
+    return fig
+
+
+def plot_feature_behavior_summary_figure(behavior_df, top_n=8):
+    if behavior_df is None or behavior_df.empty:
+        return None
+
+    plot_df = behavior_df.head(top_n).copy()
+    plot_df["Display Feature"] = plot_df["Feature"].apply(lambda item: _truncate_label(item, max_len=24))
+    plot_df = plot_df.sort_values("Average Strength", ascending=True)
+
+    color_map = {
+        "Higher values usually raise prediction": PRIMARY,
+        "Higher values usually lower prediction": DANGER,
+        "Mixed / non-linear effect": WARNING,
+        "No clear pattern": "#94A3B8",
+    }
+    colors = [color_map.get(item, SECONDARY) for item in plot_df["Typical Pattern"]]
+
+    fig, ax = plt.subplots(figsize=(5.1, 3.2), dpi=140)
+    fig.patch.set_facecolor(FIG_BG)
+
+    bars = ax.barh(
+        plot_df["Display Feature"],
+        plot_df["Average Strength"],
+        color=colors,
+        edgecolor="#CBD5E1",
+        linewidth=0.8,
+        alpha=0.95
+    )
+
+    ax.set_title("Typical behavior of key features", fontsize=10.5, pad=10)
+    ax.set_xlabel("Average impact strength", fontsize=8.5)
+    ax.set_ylabel("")
+    _apply_clean_axis_style(ax, grid_axis="x")
+
+    max_val = max(float(plot_df["Average Strength"].max()), 0.001)
+    for bar, value in zip(bars, plot_df["Average Strength"]):
+        ax.text(
+            value + (max_val * 0.03),
+            bar.get_y() + bar.get_height() / 2,
+            f"{value:.3f}",
+            va="center",
+            ha="left",
+            fontsize=7.2,
+            color=SLATE
+        )
 
     fig.tight_layout()
     return fig
@@ -225,18 +443,18 @@ def get_confusion_matrix_interpretation(confusion_matrix_array, class_labels):
     diagonal_sum = confusion_matrix_array.diagonal().sum()
 
     if total_samples == 0:
-        return "No samples were available to interpret the confusion matrix."
+        return "There were not enough samples to interpret this confusion matrix."
 
     accuracy_like = diagonal_sum / total_samples
 
     if accuracy_like >= 0.85:
-        quality = "Most predictions fall on the diagonal, so the model is separating classes quite well."
+        quality = "The model places most examples into the correct class."
     elif accuracy_like >= 0.65:
-        quality = "A fair number of predictions are correct, but some classes are still being confused."
+        quality = "The model is generally useful, but it still mixes some classes from time to time."
     else:
-        quality = "The model is mixing classes frequently, so predictions should be interpreted carefully."
+        quality = "The model is mixing classes quite often, so the results should be interpreted carefully."
 
-    class_text = f"Diagonal cells show correct predictions for classes such as: {', '.join(class_labels)}."
+    class_text = f"Off-diagonal cells show where classes such as {', '.join(class_labels)} are being confused with one another."
     return f"{quality} {class_text}"
 
 
@@ -249,12 +467,12 @@ def get_roc_interpretation(detailed_results):
             available.append((model_name, roc_data["auc"]))
 
     if not available:
-        return "ROC curve could not be shown because this is not a compatible binary classification setup or the models could not produce suitable probability scores."
+        return "The ROC chart could not be generated. This usually happens when the setup is not binary classification or the model could not produce suitable probability scores."
 
     best_model_name, best_auc = max(available, key=lambda x: x[1])
 
     if best_auc >= 0.90:
-        strength = "excellent"
+        strength = "very strong"
     elif best_auc >= 0.80:
         strength = "strong"
     elif best_auc >= 0.70:
@@ -263,29 +481,101 @@ def get_roc_interpretation(detailed_results):
         strength = "limited"
 
     return (
-        f"ROC curve shows how well models separate the two classes across thresholds. "
-        f"Closer to the top-left is better. "
-        f"The best ROC result here is {best_model_name} with AUC {best_auc:.3f}, which indicates {strength} separation."
+        f"This chart shows how cleanly the model separates the two classes. "
+        f"The best curve belongs to {best_model_name} with an AUC of {best_auc:.3f}. "
+        f"That suggests {strength} separation power."
     )
 
 
 def get_metric_commentary(results_df, metric_name, problem_type):
     if results_df.empty or metric_name not in results_df.columns:
-        return "This metric could not be summarized."
+        return "A summary comment could not be generated for this metric."
 
     ascending = metric_name in ["MAE", "RMSE"]
     best_row = results_df.sort_values(by=metric_name, ascending=ascending).iloc[0]
-
     model_name = best_row["Model"]
-    value = best_row[metric_name]
+    value = float(best_row[metric_name])
 
     if problem_type == "classification":
-        if metric_name in ["Accuracy", "Precision", "Recall", "F1 Score", "ROC AUC"]:
-            return f"{metric_name} comparison suggests that {model_name} performs best on this criterion with a score of {value:.4f}."
-    else:
-        if metric_name == "R2 Score":
-            return f"R2 comparison suggests that {model_name} explains the target best with a score of {value:.4f}."
-        if metric_name in ["MAE", "RMSE"]:
-            return f"For {metric_name}, lower values are better. {model_name} performs best here with {value:.4f}."
+        explanations = {
+            "Accuracy": "stands out on overall correctness",
+            "Precision": "looks stronger at reducing false alarms",
+            "Recall": "looks stronger at capturing true positives",
+            "F1 Score": "appears to strike the best balance",
+            "ROC AUC": "offers the clearest class separation",
+        }
+        detail = explanations.get(metric_name, "delivers the best result on this metric")
+        return f"In the {metric_name} chart, {model_name} leads with a score of {value:.3f} and {detail}."
 
-    return f"{model_name} performs best on {metric_name} with {value:.4f}."
+    if metric_name == "R2 Score":
+        return f"Based on R2, {model_name} is the strongest option for explaining the target, with a score of {value:.3f}."
+    if metric_name == "MAE":
+        return f"For MAE, lower is better. Here, {model_name} keeps the average error lowest at {value:.3f}."
+    if metric_name == "RMSE":
+        return f"RMSE penalizes larger mistakes more heavily, and {model_name} leads here with {value:.3f}."
+
+    return f"{model_name} delivers the best {metric_name} result with {value:.3f}."
+
+
+def get_model_recommendation_text(results_df, problem_type):
+    if results_df is None or results_df.empty:
+        return "A recommendation could not be generated yet because there is no model comparison."
+
+    primary_metric, metric_label = _metric_info(problem_type)
+    if primary_metric not in results_df.columns:
+        return "The main metric required for comparison was not available."
+
+    ranking = results_df.sort_values(primary_metric, ascending=False).reset_index(drop=True)
+    winner = ranking.iloc[0]
+    winner_name = winner["Model"]
+    winner_score = float(winner[primary_metric])
+
+    if len(ranking) > 1:
+        runner_up_score = float(ranking.iloc[1][primary_metric])
+        gap = winner_score - runner_up_score
+    else:
+        gap = 0.0
+
+    if gap >= 0.05:
+        gap_text = "It separates clearly from the rest of the field."
+    elif gap >= 0.02:
+        gap_text = "It has a small but meaningful edge over the alternatives."
+    else:
+        gap_text = "It ranks first, but the margin versus the other models is still quite close."
+
+    audience_text = (
+        "That makes it a sensible first choice to carry forward."
+        if gap >= 0.02 else
+        "In this case, explainability and stability may matter almost as much as the score itself."
+    )
+
+    return (
+        f"Overall, {winner_name} looks like the strongest candidate. "
+        f"It reaches {winner_score:.3f} on {metric_label}. "
+        f"{gap_text} {audience_text}"
+    )
+
+
+def get_correlation_profile_interpretation(corr_table):
+    if corr_table is None or corr_table.empty:
+        return "A correlation summary could not be generated."
+
+    strongest = corr_table.iloc[0]
+    feature = strongest["Feature"]
+    corr_value = float(strongest["Correlation with Target"])
+    direction = "moves in the same direction" if corr_value >= 0 else "moves in the opposite direction"
+
+    strength = abs(corr_value)
+    if strength >= 0.70:
+        strength_text = "quite strong"
+    elif strength >= 0.40:
+        strength_text = "moderate"
+    else:
+        strength_text = "light to moderate"
+
+    return (
+        f"The most noticeable relationship appears in {feature}. "
+        f"This feature {direction} with the target, and the relationship looks {strength_text} "
+        f"(correlation: {corr_value:.2f}). "
+        f"This section does not prove causation; it simply highlights patterns that move together."
+    )

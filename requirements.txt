@@ -7,3 +7,4 @@ matplotlib
 xlrd
 shap
 python-docx
+xgboost
