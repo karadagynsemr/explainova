@@ -3,6 +3,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import shap
 
+from sklearn.base import clone
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor, export_text, plot_tree
+from sklearn.model_selection import KFold, StratifiedKFold, cross_validate, learning_curve
+from sklearn.metrics import accuracy_score, r2_score
+
 
 def _sanitize_feature_frame(X: pd.DataFrame) -> pd.DataFrame:
     if X is None or X.empty:
@@ -75,6 +80,31 @@ def _resolve_prediction_function(trained_model, problem_type):
         return lambda data: trained_model.predict(data)
 
     return lambda data: trained_model.predict(data)
+
+
+def _predict_behavior_score(trained_model, X, problem_type):
+    if problem_type == "classification":
+        if hasattr(trained_model, "predict_proba"):
+            proba = trained_model.predict_proba(X)
+            if proba.ndim == 2 and proba.shape[1] > 1:
+                return proba[:, 1]
+            return proba.ravel()
+        return trained_model.predict(X)
+
+    return trained_model.predict(X)
+
+
+def _apply_explainability_axis_style(ax, grid_axis="y"):
+    ax.set_facecolor("#FFFFFF")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#CBD5E1")
+    ax.spines["bottom"].set_color("#CBD5E1")
+    ax.tick_params(axis="x", colors="#334155", labelsize=8)
+    ax.tick_params(axis="y", colors="#334155", labelsize=8)
+    if grid_axis:
+        ax.grid(axis=grid_axis, color="#E2E8F0", linestyle="--", linewidth=0.75, alpha=0.85)
+    ax.set_axisbelow(True)
 
 
 def compute_shap_outputs(
@@ -255,17 +285,17 @@ def plot_shap_feature_effect_figure(shap_values, X_explain, feature_name):
     feature_vals = X_explain[feature_name].values
     feature_shap = shap_values[:, feature_idx]
 
-    fig, ax = plt.subplots(figsize=(4.9, 3.2), dpi=140)
+    fig, ax = plt.subplots(figsize=(4.2, 2.8), dpi=140)
     fig.patch.set_facecolor("#F6F8FC")
     ax.set_facecolor("#FFFFFF")
 
+    point_colors = np.where(feature_shap >= 0, "#10B981", "#EF4444")
     scatter = ax.scatter(
         feature_vals,
         feature_shap,
         s=24,
         alpha=0.75,
-        c=feature_vals,
-        cmap="coolwarm",
+        c=point_colors,
         edgecolors="none"
     )
 
@@ -283,11 +313,7 @@ def plot_shap_feature_effect_figure(shap_values, X_explain, feature_name):
     ax.grid(color="#E2E8F0", linestyle="--", linewidth=0.7, alpha=0.7)
     ax.set_axisbelow(True)
 
-    cbar = fig.colorbar(scatter, ax=ax, fraction=0.046, pad=0.04)
-    cbar.outline.set_edgecolor("#CBD5E1")
-    cbar.ax.tick_params(labelsize=8, colors="#334155")
-
-    fig.subplots_adjust(left=0.13, right=0.92, top=0.88, bottom=0.18)
+    fig.subplots_adjust(left=0.13, right=0.96, top=0.88, bottom=0.18)
     return fig
 
 
@@ -386,4 +412,448 @@ def get_shap_intro_text():
         "SHAP explains which features influenced a model result and by how much. "
         "Positive values push the prediction upward, while negative values pull it downward. "
         "The larger the value, the stronger that feature's influence."
+    )
+
+
+def compute_kfold_stability(models, X, y, problem_type, n_splits=5):
+    X = _sanitize_feature_frame(X)
+    y = pd.Series(y).reset_index(drop=True)
+    X = X.reset_index(drop=True)
+
+    if len(X) < 2:
+        return pd.DataFrame()
+
+    class_counts = y.value_counts() if problem_type == "classification" else pd.Series(dtype=int)
+    if problem_type == "classification" and not class_counts.empty:
+        min_class_count = int(class_counts.min())
+        if min_class_count < 2:
+            return pd.DataFrame()
+        n_splits = max(2, min(n_splits, min_class_count))
+        splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+        scoring = {"Accuracy": "accuracy", "F1 Score": "f1_weighted"}
+        if y.nunique() == 2:
+            scoring["ROC AUC"] = "roc_auc"
+    else:
+        n_splits = max(2, min(n_splits, len(X)))
+        splitter = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+        scoring = {"R2 Score": "r2", "MAE": "neg_mean_absolute_error", "RMSE": "neg_root_mean_squared_error"}
+
+    rows = []
+    for model_name, model in models.items():
+        try:
+            scores = cross_validate(
+                clone(model),
+                X,
+                y,
+                cv=splitter,
+                scoring=scoring,
+                n_jobs=None,
+                error_score=np.nan
+            )
+        except Exception:
+            continue
+
+        row = {"Model": model_name, "Folds": n_splits}
+        for metric_name in scoring.keys():
+            values = np.array(scores[f"test_{metric_name}"], dtype=float)
+            if metric_name in ["MAE", "RMSE"]:
+                values = np.abs(values)
+            row[f"{metric_name} Mean"] = float(np.nanmean(values))
+            row[f"{metric_name} Std"] = float(np.nanstd(values))
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
+def plot_kfold_stability_figure(kfold_df, problem_type, metric_name=None):
+    if kfold_df is None or kfold_df.empty:
+        return None
+
+    if metric_name is None:
+        metric_name = "Accuracy" if problem_type == "classification" else "R2 Score"
+
+    metric = f"{metric_name} Mean"
+    std_metric = f"{metric_name} Std"
+    if metric not in kfold_df.columns:
+        return None
+
+    lower_is_better = metric_name in ["MAE", "RMSE"]
+    plot_df = kfold_df.sort_values(metric, ascending=not lower_is_better).copy()
+    labels = [_truncate_feature_name(item, max_len=24) for item in plot_df["Model"]]
+
+    fig, ax = plt.subplots(figsize=(4.4, 2.65), dpi=140)
+    fig.patch.set_facecolor("#F6F8FC")
+
+    ax.barh(
+        labels,
+        plot_df[metric],
+        xerr=plot_df[std_metric] if std_metric in plot_df.columns else None,
+        color="#10B981",
+        edgecolor="#059669",
+        linewidth=0.8,
+        alpha=0.92
+    )
+    ax.set_title(f"{metric_name} stability across folds", fontsize=10.2, pad=9)
+    ax.set_xlabel(metric_name, fontsize=8.5)
+    ax.set_ylabel("")
+    _apply_explainability_axis_style(ax, grid_axis="x")
+    fig.tight_layout()
+    return fig
+
+
+def get_kfold_interpretation(kfold_df, problem_type, metric_name=None, current_leader=None):
+    if kfold_df is None or kfold_df.empty:
+        return "Stability could not be measured because cross-validation did not return usable results."
+
+    if metric_name is None:
+        metric_name = "Accuracy" if problem_type == "classification" else "R2 Score"
+
+    metric = f"{metric_name} Mean"
+    std_metric = f"{metric_name} Std"
+    if metric not in kfold_df.columns:
+        return "Stability could not be summarized because the expected metric was not available."
+
+    lower_is_better = metric_name in ["MAE", "RMSE"]
+    best = kfold_df.sort_values(metric, ascending=lower_is_better).iloc[0]
+    spread = float(best.get(std_metric, 0.0))
+    if spread <= 0.03:
+        stability = "quite stable"
+    elif spread <= 0.08:
+        stability = "reasonably stable, with some fold-to-fold movement"
+    else:
+        stability = "sensitive to which rows are used for training"
+
+    base_text = (
+        f"K-fold validation repeats the evaluation across multiple train/test splits. "
+        f"Using {metric_name}, {best['Model']} has the strongest average result in this stability check, with variation that appears {stability}. "
+        f"This does not replace the main model ranking; it shows whether performance remains consistent when the data split changes."
+    )
+
+    if current_leader and str(best["Model"]) != str(current_leader):
+        return (
+            base_text + f" The main dashboard leader is {current_leader}, while K-fold highlights {best['Model']}. "
+            "This can happen because the dashboard is based on one held-out split, while K-fold averages several splits. "
+            "Treat this as a stability signal: if the difference is small, the simpler or more explainable model can still be preferred; if the gap is large, compare both models before choosing."
+        )
+
+    return base_text
+
+
+def compute_learning_curve_data(model, X, y, problem_type, cv=4):
+    X = _sanitize_feature_frame(X).reset_index(drop=True)
+    y = pd.Series(y).reset_index(drop=True)
+    if len(X) < 3:
+        return None
+    scoring = "accuracy" if problem_type == "classification" else "r2"
+
+    if problem_type == "classification":
+        min_class_count = int(y.value_counts().min())
+        if min_class_count < 2:
+            return None
+        cv = max(2, min(cv, min_class_count))
+        splitter = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
+    else:
+        cv = max(2, min(cv, len(X)))
+        splitter = KFold(n_splits=cv, shuffle=True, random_state=42)
+
+    train_sizes, train_scores, validation_scores = learning_curve(
+        clone(model),
+        X,
+        y,
+        cv=splitter,
+        scoring=scoring,
+        train_sizes=np.linspace(0.3, 1.0, 5),
+        n_jobs=None,
+        error_score=np.nan
+    )
+
+    return {
+        "train_sizes": train_sizes,
+        "train_mean": np.nanmean(train_scores, axis=1),
+        "train_std": np.nanstd(train_scores, axis=1),
+        "validation_mean": np.nanmean(validation_scores, axis=1),
+        "validation_std": np.nanstd(validation_scores, axis=1),
+        "score_name": "Accuracy" if problem_type == "classification" else "R2 Score"
+    }
+
+
+def plot_learning_curve_figure(curve_data):
+    if not curve_data:
+        return None
+
+    fig, ax = plt.subplots(figsize=(5.4, 3.25), dpi=140)
+    fig.patch.set_facecolor("#F6F8FC")
+
+    train_sizes = curve_data["train_sizes"]
+    train_mean = curve_data["train_mean"]
+    train_std = curve_data["train_std"]
+    validation_mean = curve_data["validation_mean"]
+    validation_std = curve_data["validation_std"]
+
+    ax.plot(train_sizes, train_mean, marker="o", color="#2563EB", label="Training score", linewidth=2)
+    ax.fill_between(train_sizes, train_mean - train_std, train_mean + train_std, color="#2563EB", alpha=0.13)
+    ax.plot(train_sizes, validation_mean, marker="o", color="#10B981", label="Validation score", linewidth=2)
+    ax.fill_between(train_sizes, validation_mean - validation_std, validation_mean + validation_std, color="#10B981", alpha=0.13)
+
+    ax.set_title("Learning curve", fontsize=10.5, pad=10)
+    ax.set_xlabel("Training rows used", fontsize=8.5)
+    ax.set_ylabel(curve_data.get("score_name", "Score"), fontsize=8.5)
+    _apply_explainability_axis_style(ax, grid_axis="both")
+    ax.legend(fontsize=7.5, loc="best", frameon=True, facecolor="white", edgecolor="#E2E8F0")
+    fig.tight_layout()
+    return fig
+
+
+def get_learning_curve_interpretation(curve_data):
+    if not curve_data:
+        return "The learning curve could not be summarized."
+
+    train_last = float(curve_data["train_mean"][-1])
+    validation_last = float(curve_data["validation_mean"][-1])
+    gap = train_last - validation_last
+    previous_validation = float(curve_data["validation_mean"][-2]) if len(curve_data["validation_mean"]) > 1 else validation_last
+    improvement = validation_last - previous_validation
+
+    if gap > 0.12:
+        fit_text = "The training score is materially higher than the validation score, indicating possible overfitting."
+    elif validation_last < 0.45:
+        fit_text = "Both scores are relatively low, indicating that feature quality or model choice may need review."
+    else:
+        fit_text = "Training and validation scores are reasonably aligned, indicating a healthier fit profile."
+
+    if improvement > 0.02:
+        data_text = "Validation performance is still improving near the final training size, so additional data may be beneficial."
+    else:
+        data_text = "Validation performance is flattening, so additional rows alone may have limited impact."
+
+    return f"{fit_text} {data_text}"
+
+
+def compute_pdp_ice_data(trained_model, X, feature_name, problem_type, grid_points=12, ice_samples=30):
+    X = _sanitize_feature_frame(X)
+    if X.empty or feature_name not in X.columns:
+        return None
+
+    feature_values = X[feature_name].dropna()
+    unique_values = np.sort(feature_values.unique())
+    if len(unique_values) <= grid_points:
+        grid = unique_values
+    else:
+        grid = np.quantile(feature_values, np.linspace(0.05, 0.95, grid_points))
+        grid = np.unique(grid)
+
+    if len(grid) == 0:
+        return None
+
+    sample_X = sample_explanation_data(X, max_samples=ice_samples).reset_index(drop=True)
+    ice_lines = []
+    pdp_values = []
+
+    for value in grid:
+        modified = sample_X.copy()
+        modified[feature_name] = value
+        preds = np.array(_predict_behavior_score(trained_model, modified, problem_type), dtype=float)
+        ice_lines.append(preds)
+        pdp_values.append(float(np.mean(preds)))
+
+    ice_matrix = np.array(ice_lines).T
+    return {
+        "feature_name": feature_name,
+        "grid": np.array(grid, dtype=float),
+        "pdp": np.array(pdp_values, dtype=float),
+        "ice": ice_matrix,
+        "score_label": "Positive-class probability" if problem_type == "classification" else "Predicted value"
+    }
+
+
+def plot_pdp_ice_figure(pdp_ice_data):
+    if not pdp_ice_data:
+        return None
+
+    fig, ax = plt.subplots(figsize=(4.2, 2.8), dpi=140)
+    fig.patch.set_facecolor("#F6F8FC")
+
+    grid = pdp_ice_data["grid"]
+    ice = pdp_ice_data["ice"]
+    for row in ice:
+        ax.plot(grid, row, color="#94A3B8", linewidth=0.75, alpha=0.25)
+
+    trend_color = "#10B981" if pdp_ice_data["pdp"][-1] >= pdp_ice_data["pdp"][0] else "#EF4444"
+    ax.plot(grid, pdp_ice_data["pdp"], color=trend_color, linewidth=2.6, marker="o", label="Average behavior")
+    ax.set_title(f"What changes when {pdp_ice_data['feature_name']} changes?", fontsize=10.5, pad=10)
+    ax.set_xlabel(pdp_ice_data["feature_name"], fontsize=8.5)
+    ax.set_ylabel(pdp_ice_data["score_label"], fontsize=8.5)
+    _apply_explainability_axis_style(ax, grid_axis="both")
+    ax.legend(fontsize=7.5, loc="best", frameon=True, facecolor="white", edgecolor="#E2E8F0")
+    fig.tight_layout()
+    return fig
+
+
+def get_pdp_ice_interpretation(pdp_ice_data):
+    if not pdp_ice_data:
+        return "The feature behavior chart could not be summarized."
+
+    grid = pdp_ice_data["grid"]
+    pdp = pdp_ice_data["pdp"]
+    if len(grid) < 2:
+        return "This feature does not vary enough to show a useful what-changes-when-it-changes pattern."
+
+    change = float(pdp[-1] - pdp[0])
+    feature_name = pdp_ice_data["feature_name"]
+    if change > 0:
+        direction = "is associated with a higher model output"
+    elif change < 0:
+        direction = "is associated with a lower model output"
+    else:
+        direction = "does not show a clear directional change in model output"
+
+    return (
+        f"The chart varies only {feature_name} while holding the remaining feature values fixed. "
+        f"Across the analysis sample, moving from lower to higher values {direction}. "
+        f"Variation among the gray ICE lines indicates that the feature effect differs across individual rows."
+    )
+
+
+def build_counterfactual_table(trained_model, X, sample_index, problem_type, feature_names, max_features=6):
+    X = _sanitize_feature_frame(X).reset_index(drop=True)
+    if X.empty:
+        return pd.DataFrame(), "No usable rows were available for what-if analysis."
+
+    sample_index = max(0, min(int(sample_index), len(X) - 1))
+    row = X.iloc[[sample_index]].copy()
+    before_pred = trained_model.predict(row)[0]
+    before_score = float(_predict_behavior_score(trained_model, row, problem_type)[0])
+
+    rows = []
+    for feature in feature_names[:max_features]:
+        if feature not in X.columns:
+            continue
+
+        values = X[feature].dropna()
+        if values.nunique() <= 1:
+            continue
+
+        candidates = np.unique(np.quantile(values, np.linspace(0.05, 0.95, 11)))
+        best = None
+
+        for candidate in candidates:
+            modified = row.copy()
+            modified[feature] = candidate
+            after_pred = trained_model.predict(modified)[0]
+            after_score = float(_predict_behavior_score(trained_model, modified, problem_type)[0])
+            score_change = after_score - before_score
+            pred_changed = after_pred != before_pred
+
+            if problem_type == "classification" and pred_changed:
+                distance = abs(float(candidate) - float(row.iloc[0][feature]))
+                option = (distance, candidate, after_pred, after_score, score_change)
+                if best is None or option[0] < best[0]:
+                    best = option
+            elif problem_type == "regression":
+                option = (abs(score_change), candidate, after_pred, after_score, score_change)
+                if best is None or option[0] > best[0]:
+                    best = option
+
+        if best is not None:
+            _, candidate, after_pred, after_score, score_change = best
+            rows.append({
+                "Feature": feature,
+                "Current Value": float(row.iloc[0][feature]),
+                "What-if Value": float(candidate),
+                "Current Result": float(before_score),
+                "What-if Result": float(after_score),
+                "Change": float(score_change),
+                "Predicted Class After": after_pred if problem_type == "classification" else ""
+            })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        note = (
+            "No single-feature change in the tested value range changed the predicted class. "
+            "That usually means this row is not easy to flip with one simple change."
+            if problem_type == "classification"
+            else
+            "No useful what-if movement was found for the selected features."
+        )
+    else:
+        note = (
+            "This is a simple what-if search: it changes one feature at a time and checks how the model response moves. "
+            "It should be read as model behavior, not as a guaranteed real-world recommendation."
+        )
+
+    return df, note
+
+
+def build_surrogate_tree(trained_model, X, problem_type, max_depth=3):
+    X = _sanitize_feature_frame(X).reset_index(drop=True)
+    if X.empty:
+        return None
+
+    model_predictions = trained_model.predict(X)
+    if problem_type == "classification":
+        surrogate = DecisionTreeClassifier(max_depth=max_depth, min_samples_leaf=5, random_state=42)
+    else:
+        surrogate = DecisionTreeRegressor(max_depth=max_depth, min_samples_leaf=5, random_state=42)
+
+    surrogate.fit(X, model_predictions)
+    surrogate_predictions = surrogate.predict(X)
+    if problem_type == "classification":
+        fidelity = accuracy_score(model_predictions, surrogate_predictions)
+        fidelity_label = "Agreement with original model"
+    else:
+        fidelity = r2_score(model_predictions, surrogate_predictions)
+        fidelity_label = "Approximation strength"
+
+    rules = export_text(
+        surrogate,
+        feature_names=[_truncate_feature_name(col, max_len=32) for col in X.columns],
+        max_depth=max_depth
+    )
+
+    return {
+        "tree": surrogate,
+        "rules": rules,
+        "fidelity": float(fidelity),
+        "fidelity_label": fidelity_label,
+        "feature_names": list(X.columns)
+    }
+
+
+def plot_surrogate_tree_figure(surrogate_outputs, problem_type):
+    if not surrogate_outputs:
+        return None
+
+    fig, ax = plt.subplots(figsize=(8.0, 4.2), dpi=130)
+    fig.patch.set_facecolor("#F6F8FC")
+    ax.set_facecolor("#FFFFFF")
+    plot_tree(
+        surrogate_outputs["tree"],
+        feature_names=[_truncate_feature_name(col, max_len=18) for col in surrogate_outputs["feature_names"]],
+        filled=True,
+        rounded=True,
+        fontsize=6.8,
+        impurity=False,
+        ax=ax
+    )
+    ax.set_title("Simple rule model that imitates the selected model", fontsize=10.5, pad=10)
+    fig.tight_layout()
+    return fig
+
+
+def get_surrogate_interpretation(surrogate_outputs):
+    if not surrogate_outputs:
+        return "The simple rule model could not be generated."
+
+    fidelity = surrogate_outputs["fidelity"]
+    if fidelity >= 0.85:
+        quality = "does a strong job of imitating"
+    elif fidelity >= 0.65:
+        quality = "captures a useful simplified version of"
+    else:
+        quality = "only loosely imitates"
+
+    return (
+        f"This small decision tree {quality} the selected model "
+        f"({surrogate_outputs['fidelity_label']}: {fidelity:.3f}). "
+        f"It is not replacing the original model; it gives a simpler rule-based sketch of the model's behavior."
     )

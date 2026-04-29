@@ -20,7 +20,6 @@ from src.visualization import (
     build_target_correlation_table,
     plot_correlation_heatmap_figure,
     plot_correlation_profile_figure,
-    plot_local_contribution_figure,
     plot_feature_behavior_summary_figure,
     get_confusion_matrix_interpretation,
     get_roc_interpretation,
@@ -32,9 +31,13 @@ from src.explainability import (
     compute_shap_outputs,
     plot_shap_importance_bar,
     plot_shap_summary_figure,
-    plot_shap_waterfall_figure,
     plot_shap_feature_effect_figure,
-    get_waterfall_interpretation,
+    compute_kfold_stability,
+    plot_kfold_stability_figure,
+    get_kfold_interpretation,
+    compute_pdp_ice_data,
+    plot_pdp_ice_figure,
+    get_pdp_ice_interpretation,
     get_feature_effect_interpretation,
     get_shap_selection_guidance,
     get_shap_intro_text
@@ -547,16 +550,19 @@ def reset_training_state():
         "shap_model_name",
         "shap_bar_fig",
         "shap_summary_fig",
-        "shap_waterfall_fig",
         "shap_effect_fig",
-        "shap_waterfall_note",
         "shap_effect_note",
-        "local_contribution_df",
-        "local_contribution_fig",
         "feature_behavior_df",
         "feature_behavior_fig",
         "model_leaderboard_fig",
         "model_recommendation_text",
+        "kfold_df",
+        "kfold_fig",
+        "kfold_note",
+        "kfold_metric_name",
+        "pdp_ice_fig",
+        "pdp_ice_note",
+        "feature_detail_reports",
     ]:
         if key in st.session_state:
             del st.session_state[key]
@@ -644,9 +650,11 @@ def show_step_progress(completed_steps: int):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def show_section_header(title, subtitle=None):
+def show_section_header(title, subtitle=None, anchor=None):
+    anchor_html = f'<span id="{anchor}"></span>' if anchor else ""
     st.markdown(
         f"""
+        {anchor_html}
         <div class="section-box">
             <div class="section-title">{title}</div>
             {f'<div class="section-subtitle">{subtitle}</div>' if subtitle else ''}
@@ -654,6 +662,28 @@ def show_section_header(title, subtitle=None):
         """,
         unsafe_allow_html=True
     )
+
+
+def show_stage_sidebar(completed_steps: int):
+    stages = [
+        ("Data", "Dataset Preview", "dataset-preview", completed_steps >= 1),
+        ("Prep", "Preprocessing", "preprocessing-options", completed_steps >= 2),
+        ("Train", "Model Training", "model-training", completed_steps >= 3),
+        ("Explain", "SHAP Explainability", "shap-explainability", completed_steps >= 4),
+        ("Report", "Download Report", "download-report", completed_steps >= 4),
+    ]
+
+    st.sidebar.markdown("### Workflow")
+    st.sidebar.caption("Use the links to jump between available analysis stages.")
+
+    for idx, (_, label, anchor, available) in enumerate(stages, 1):
+        is_active = (completed_steps + 1 == idx and completed_steps < 4) or (completed_steps >= 4 and idx == 4)
+        status = "Active" if is_active else ("Ready" if available else "Locked")
+        marker = "●" if is_active else ("✓" if available else "○")
+        if available or idx <= completed_steps + 1:
+            st.sidebar.markdown(f"{marker} [{label}](#{anchor})  \n`{status}`")
+        else:
+            st.sidebar.markdown(f"{marker} {label}  \n`{status}`")
 
 
 def show_section_divider():
@@ -855,6 +885,44 @@ def should_offer_feature_reduction(df, row_threshold=10000, column_threshold=40,
     return rows >= row_threshold or cols >= column_threshold or rows * cols >= cell_threshold
 
 
+def get_kfold_cost_label(X, model_count):
+    rows, cols = X.shape
+    total_cells = rows * cols
+    if rows >= 20000 or cols >= 80 or total_cells >= 700000 or model_count >= 4:
+        return "High", "This may take noticeably longer on the current dataset."
+    if rows >= 5000 or cols >= 40 or total_cells >= 200000 or model_count >= 2:
+        return "Medium", "This can add some extra processing time."
+    return "Low", "This should usually complete quickly."
+
+
+def get_kfold_metric_options(kfold_df, problem_type):
+    if kfold_df is None or kfold_df.empty:
+        return []
+
+    if problem_type == "classification":
+        candidates = ["ROC AUC", "F1 Score", "Accuracy"]
+    else:
+        candidates = ["R2 Score", "MAE", "RMSE"]
+
+    return [metric for metric in candidates if f"{metric} Mean" in kfold_df.columns]
+
+
+def build_kfold_metric_note(metric_name):
+    notes = {
+        "ROC AUC": "ROC AUC focuses on class separation across thresholds. It can favor a model that ranks positive cases well even if another model has higher raw accuracy.",
+        "F1 Score": "F1 balances precision and recall. It is useful when false positives and false negatives both matter.",
+        "Accuracy": "Accuracy focuses on the overall share of correct predictions. It is easiest to read, but can be misleading when classes are imbalanced.",
+        "R2 Score": "R2 focuses on explained variation. Higher values indicate stronger regression fit.",
+        "MAE": "MAE focuses on average absolute error. Lower values indicate smaller typical mistakes.",
+        "RMSE": "RMSE penalizes larger errors more strongly. Lower values indicate fewer large mistakes."
+    }
+    return notes.get(metric_name, "Select the metric that best matches the decision goal.")
+
+
+def get_primary_stability_metric(problem_type):
+    return "Accuracy" if problem_type == "classification" else "R2 Score"
+
+
 def show_metric_plots(results_df, problem_type):
     if problem_type == "classification":
         metrics = ["Accuracy", "Precision", "Recall", "F1 Score"]
@@ -954,14 +1022,18 @@ def show_download_section(target_column, report, results_df, problem_type,
                           shap_outputs, shap_model_name, shap_bar_fig, shap_summary_fig,
                           corr_table_for_report=None, corr_heatmap_fig=None,
                           corr_profile_fig=None,
-                          shap_waterfall_fig=None, shap_effect_fig=None,
-                          waterfall_note=None, effect_note=None,
+                          shap_effect_fig=None,
+                          effect_note=None,
                           model_leaderboard_fig=None, model_recommendation_text=None,
                           corr_profile_note=None,
-                          local_contribution_df=None, local_contribution_fig=None,
-                          feature_behavior_df=None, feature_behavior_fig=None):
+                          feature_behavior_df=None, feature_behavior_fig=None,
+                          kfold_df=None, kfold_fig=None, kfold_note=None,
+                          pdp_ice_fig=None, pdp_ice_note=None,
+                          feature_detail_reports=None,
+                          ):
     st.markdown(
         """
+        <span id="download-report"></span>
         <div class="download-card">
             <div class="download-title">Download Report</div>
             <div class="download-subtitle">
@@ -988,17 +1060,19 @@ def show_download_section(target_column, report, results_df, problem_type,
             corr_table=corr_table_for_report,
             corr_heatmap_fig=corr_heatmap_fig,
             corr_profile_fig=corr_profile_fig,
-            shap_waterfall_fig=shap_waterfall_fig,
             shap_effect_fig=shap_effect_fig,
-            waterfall_note=waterfall_note,
             effect_note=effect_note,
             model_leaderboard_fig=model_leaderboard_fig,
             model_recommendation_text=model_recommendation_text,
             corr_profile_note=corr_profile_note,
-            local_contribution_df=local_contribution_df,
-            local_contribution_fig=local_contribution_fig,
             feature_behavior_df=feature_behavior_df,
             feature_behavior_fig=feature_behavior_fig,
+            kfold_df=kfold_df,
+            kfold_fig=kfold_fig,
+            kfold_note=kfold_note,
+            pdp_ice_fig=pdp_ice_fig,
+            pdp_ice_note=pdp_ice_note,
+            feature_detail_reports=feature_detail_reports,
         )
         st.download_button(
             label="Download Word Report",
@@ -1021,12 +1095,14 @@ uploaded_file = st.file_uploader(
 
 sync_uploaded_file_state(uploaded_file)
 flush_pending_toast()
-show_workflow_status(get_completed_steps())
-show_step_progress(get_completed_steps())
+completed_steps = get_completed_steps()
+show_stage_sidebar(completed_steps)
+show_workflow_status(completed_steps)
+show_step_progress(completed_steps)
 
 if uploaded_file is not None:
     try:
-        show_section_header("Dataset Preview", "Review the uploaded data before selecting the target column.")
+        show_section_header("Dataset Preview", "Review the uploaded data before selecting the target column.", anchor="dataset-preview")
         df = load_dataset(uploaded_file)
 
         preview_rows = st.selectbox(
@@ -1078,7 +1154,7 @@ if uploaded_file is not None:
         auto_detected_ordinal_columns = ordinal_info["auto_detected_ordinal_columns"]
 
         show_section_divider()
-        show_section_header("Preprocessing Options", "Review the guidance and choose your preprocessing settings.")
+        show_section_header("Preprocessing Options", "Review the guidance and choose your preprocessing settings.", anchor="preprocessing-options")
 
         user_selected_ordinal_columns = []
         user_defined_ordinal_mappings = {}
@@ -1221,7 +1297,7 @@ if uploaded_file is not None:
             report = st.session_state["preprocessing_report"]
 
             show_section_divider()
-            show_section_header("Preprocessing Review", "Inspect the processed dataset and the main preprocessing outcomes.")
+            show_section_header("Preprocessing Review", "Inspect the processed dataset and the main preprocessing outcomes.", anchor="preprocessing-review")
 
             total_dropped_columns = count_total_dropped_columns(report)
             total_missing_filled = len(report.get("filled_missing_numerical", [])) + len(report.get("filled_missing_categorical", []))
@@ -1318,7 +1394,7 @@ if uploaded_file is not None:
                         st.write(f"- {cls}")
 
             show_section_divider()
-            show_section_header("Feature Relationship Overview", "A direct view of linear relationships in the processed dataset before model-based explanations.")
+            show_section_header("Feature Relationship Overview", "A direct view of linear relationships in the processed dataset before model-based explanations.", anchor="feature-relationships")
 
             explain_X = X_explain_reference.copy()
             corr_table = build_target_correlation_table(
@@ -1360,7 +1436,7 @@ if uploaded_file is not None:
                         explain_X,
                         y,
                         target_name=st.session_state["target_column"],
-                        top_n=10
+                        top_n=8
                     )
                     if corr_heatmap_fig is not None:
                         show_chart_frame(corr_heatmap_fig, use_container_width=True)
@@ -1380,7 +1456,7 @@ if uploaded_file is not None:
                 st.session_state["corr_profile_note"] = None
 
             show_section_divider()
-            show_section_header("Model Training", "Choose the prediction type first, then decide whether to compare several models or focus on one.")
+            show_section_header("Model Training", "Choose the prediction type first, then decide whether to compare several models or focus on one.", anchor="model-training")
 
             detected_problem_type = detect_problem_type(y)
 
@@ -1449,6 +1525,9 @@ if uploaded_file is not None:
                     st.session_state["problem_type"] = problem_type
                     st.session_state["results_df"] = results_df
                     st.session_state["detailed_results"] = detailed_results
+                    st.session_state["kfold_df"] = None
+                    st.session_state["kfold_fig"] = None
+                    st.session_state["kfold_note"] = None
                     st.session_state["selected_training_mode"] = training_mode
                     st.session_state["selected_model_name"] = selected_model_name
                     queue_toast("Model training completed successfully.")
@@ -1466,7 +1545,7 @@ if uploaded_file is not None:
             X_explain_reference = st.session_state["X_explain_reference"]
 
             show_section_divider()
-            show_section_header("Results Dashboard", "Review model results, metric comparisons, and classification visuals.")
+            show_section_header("Results Dashboard", "Review model results, metric comparisons, and classification visuals.", anchor="results-dashboard")
 
             st.write(f"Detected problem type: **{problem_type.capitalize()}**")
             st.dataframe(results_df, use_container_width=True)
@@ -1527,6 +1606,97 @@ if uploaded_file is not None:
                     st.write("R2 Score shows explanatory power, while MAE and RMSE show prediction error size.")
 
             if problem_type == "classification":
+                show_info_box(
+                    "Model Selection Guide",
+                    "Accuracy is the primary ranking metric in the dashboard and shows the overall correct prediction rate. ROC AUC focuses on how well a model separates two classes across thresholds. K-fold checks whether Accuracy remains consistent across repeated splits. These views can highlight different models; when they disagree, compare the size of the gap and choose the metric that best matches the decision goal."
+                )
+            else:
+                show_info_box(
+                    "Model Selection Guide",
+                    "R2 Score is the primary ranking metric and shows how much target variation the model explains. MAE and RMSE show prediction error size. K-fold checks whether R2 remains consistent across repeated splits."
+                )
+
+            kfold_df = st.session_state.get("kfold_df")
+            kfold_fig = st.session_state.get("kfold_fig")
+            kfold_note = st.session_state.get("kfold_note")
+            st.subheader("Optional Stability Check")
+            kfold_cost, kfold_cost_note = get_kfold_cost_label(X, len(detailed_results))
+            show_info_box(
+                "K-Fold Cross-Validation",
+                f"Runs the selected model set across several train/test splits and reports {get_primary_stability_metric(problem_type)} stability. Estimated workload: {kfold_cost}. {kfold_cost_note}"
+            )
+            if st.button("Run K-Fold Stability Check"):
+                with st.spinner("Running K-fold stability check..."):
+                    try:
+                        all_models = get_available_models(problem_type)
+                        models_for_stability = {
+                            name: all_models[name]
+                            for name in detailed_results.keys()
+                            if name in all_models
+                        }
+                        kfold_df = compute_kfold_stability(
+                            models=models_for_stability,
+                            X=X,
+                            y=y,
+                            problem_type=problem_type,
+                            n_splits=5
+                        )
+                        selected_kfold_metric = get_primary_stability_metric(problem_type)
+                        kfold_fig = plot_kfold_stability_figure(kfold_df, problem_type, metric_name=selected_kfold_metric)
+                        kfold_note = get_kfold_interpretation(
+                            kfold_df,
+                            problem_type,
+                            metric_name=selected_kfold_metric,
+                            current_leader=best_model_name
+                        )
+                    except Exception as stability_error:
+                        kfold_df = None
+                        kfold_fig = None
+                        kfold_note = f"Stability check could not be completed: {stability_error}"
+                        selected_kfold_metric = None
+
+                st.session_state["kfold_df"] = kfold_df
+                st.session_state["kfold_fig"] = kfold_fig
+                st.session_state["kfold_note"] = kfold_note
+                st.session_state["kfold_metric_name"] = selected_kfold_metric
+                st.rerun()
+
+            if kfold_df is not None or kfold_note:
+                selected_kfold_metric = get_primary_stability_metric(problem_type)
+                if kfold_df is not None and not kfold_df.empty:
+                    kfold_fig = plot_kfold_stability_figure(kfold_df, problem_type, metric_name=selected_kfold_metric)
+                    kfold_note = get_kfold_interpretation(
+                        kfold_df,
+                        problem_type,
+                        metric_name=selected_kfold_metric,
+                        current_leader=best_model_name
+                    )
+                    st.session_state["kfold_fig"] = kfold_fig
+                    st.session_state["kfold_note"] = kfold_note
+                    show_chart_note(
+                        f"Stability is evaluated with {selected_kfold_metric}. This section is a consistency check, not a replacement for the main dashboard ranking. ROC AUC can still favor another model because it measures class separation rather than overall correctness."
+                        if problem_type == "classification"
+                        else "Stability is evaluated with R2 Score, which measures explained variation across repeated splits."
+                    )
+                if kfold_fig is not None:
+                    kf_left, kf_mid, kf_right = st.columns([0.18, 0.64, 0.18])
+                    with kf_mid:
+                        show_chart_frame(kfold_fig, use_container_width=False)
+                if kfold_df is not None and not kfold_df.empty:
+                    compact_cols = ["Model", "Folds"]
+                    compact_cols.extend([f"{selected_kfold_metric} Mean", f"{selected_kfold_metric} Std"])
+                    compact_cols = [col for col in compact_cols if col in kfold_df.columns]
+                    st.dataframe(
+                        kfold_df[compact_cols].round(4),
+                        use_container_width=True,
+                        height=160
+                    )
+                show_story_panel(
+                    "Stability assessment",
+                    kfold_note or "Stability results are not available for the current configuration."
+                )
+
+            if problem_type == "classification":
                 st.subheader("Confusion Matrix")
 
                 model_to_show = st.selectbox(
@@ -1548,9 +1718,12 @@ if uploaded_file is not None:
                     st.subheader("ROC Curve")
                     show_chart_frame(roc_fig, use_container_width=False)
                     show_info_box("ROC Curve Insight", get_roc_interpretation(detailed_results))
+                    show_chart_note(
+                        "ROC AUC and Accuracy can lead to different model preferences. Use ROC AUC when separation between two classes is the priority; use Accuracy when the overall correct prediction rate is the priority."
+                    )
 
             show_section_divider()
-            show_section_header("SHAP Explainability", "Select the model you want to interpret after reviewing the evaluation results.")
+            show_section_header("SHAP Explainability", "Select the model you want to interpret after reviewing the evaluation results.", anchor="shap-explainability")
 
             show_info_box(
                 "How to choose a model for SHAP",
@@ -1596,6 +1769,7 @@ if uploaded_file is not None:
                 shap_model_name = st.session_state.get("shap_model_name", "Selected Model")
                 shap_bar_fig = st.session_state.get("shap_bar_fig")
                 shap_summary_fig = st.session_state.get("shap_summary_fig")
+                explained_model = detailed_results.get(shap_model_name, {}).get("trained_model")
 
                 st.subheader(f"SHAP Results for {shap_model_name}")
                 show_info_box("What SHAP shows", get_shap_intro_text())
@@ -1626,25 +1800,24 @@ if uploaded_file is not None:
                     }
                 ])
                 show_story_panel(
-                    "How to read this section",
-                    "Look at these visuals as answers to 'Why did this result happen?' rather than just 'What did the model do?'. "
-                    "A comfortable reading order is: top features first, then one example's drivers, then one feature's broader behavior."
+                    "Interpretation workflow",
+                    "Review the global feature ranking first, then inspect an individual prediction, and finally evaluate how a selected feature changes model behavior."
                 )
 
                 shap_col1, shap_col2 = st.columns([1.0, 1.15])
 
                 with shap_col1:
                     st.subheader("Top Influential Features")
-                    st.dataframe(importance_df.head(12), use_container_width=True)
+                    st.dataframe(importance_df.head(8).round(4), use_container_width=True, height=260)
                     show_chart_note(
-                        "This table ranks features by average impact strength. Larger values mean the feature has a stronger overall influence on model output."
+                        "Features are ranked by average absolute SHAP impact. Higher values indicate stronger overall influence on model output."
                     )
 
                 with shap_col2:
                     if shap_bar_fig is not None:
                         show_chart_frame(shap_bar_fig, use_container_width=True)
                     show_chart_note(
-                        "This chart shows the same ranking visually. Longer bars indicate features that shape the model more strongly."
+                        "Longer bars indicate stronger average contribution across the analyzed sample."
                     )
 
                 st.subheader("Overall Distribution View")
@@ -1653,124 +1826,111 @@ if uploaded_file is not None:
                     if shap_summary_fig is not None:
                         show_chart_frame(shap_summary_fig, use_container_width=True)
                 show_chart_note(
-                    "Each dot represents one sample. Dots further right push the prediction upward, while dots further left pull it downward."
+                    "Each point represents one row. Position indicates whether the feature increased or decreased the model output for that row."
                 )
-
-                st.subheader("Why This One Result Happened")
-                st.caption(
-                    "Here you choose one example row from the analyzed sample. "
-                    "The visuals then show which factors pushed that single result up or down."
-                )
-
-                show_chart_note(
-                    "One row means one specific example. The question here is: 'Why did the model give this result for this particular case?'"
-                )
-
-                shap_sample_count = len(shap_outputs["X_explain"])
-                selected_sample_index = st.slider(
-                    "Choose one example row to explain",
-                    min_value=0,
-                    max_value=max(0, shap_sample_count - 1),
-                    value=0,
-                    step=1
-                )
-
-                st.write("Selected example row preview:")
-                st.dataframe(
-                    shap_outputs["X_explain"].iloc[[selected_sample_index]].round(4),
-                    use_container_width=True
-                )
-
-                waterfall_fig = plot_shap_waterfall_figure(
-                    base_values=shap_outputs["base_values"],
-                    shap_values=shap_outputs["shap_values"],
-                    X_explain=shap_outputs["X_explain"],
-                    sample_index=selected_sample_index,
-                    max_display=8
-                )
-
-                waterfall_note = get_waterfall_interpretation(
-                    base_values=shap_outputs["base_values"],
-                    shap_values=shap_outputs["shap_values"],
-                    X_explain=shap_outputs["X_explain"],
-                    sample_index=selected_sample_index,
-                    top_k=3
-                )
-
-                wf_left, wf_mid, wf_right = st.columns([0.12, 0.76, 0.12])
-                with wf_mid:
-                    if waterfall_fig is not None:
-                        show_chart_frame(waterfall_fig, use_container_width=True)
-
-                show_chart_note(
-                    "This chart explains the result step by step. It starts from the model's usual baseline and shows which features pushed the outcome upward or downward."
-                )
-                show_info_box("How to read this single result", waterfall_note)
-
-                local_table = build_local_contribution_table(
-                    shap_outputs=shap_outputs,
-                    sample_index=selected_sample_index,
-                    top_n=6
-                )
-                local_contribution_fig = plot_local_contribution_figure(local_table, top_n=6)
-
-                local_col1, local_col2 = st.columns([1.05, 0.95])
-                with local_col1:
-                    st.subheader("Top Drivers Chart")
-                    if local_contribution_fig is not None:
-                        show_chart_frame(local_contribution_fig, use_container_width=True)
-                    show_chart_note(
-                        "Bars extending right show reasons that raised the result, while bars extending left show reasons that lowered it."
-                    )
-                with local_col2:
-                    st.subheader("Top Drivers Table")
-                    st.dataframe(local_table.round(4), use_container_width=True)
-                    show_chart_note(
-                        "This table shows the same reasons numerically. 'Pushes up' increases the result, while 'Pulls down' reduces it."
-                    )
 
                 st.subheader("How One Feature Changes the Result")
                 st.caption(
-                    "Here you choose one feature, and the chart shows how the model usually reacts as that feature changes."
+                    "Select a feature to inspect its relationship with model output."
                 )
 
                 show_chart_note(
-                    "This chart does not compare directly against the real target. It shows model behavior: when this feature changes, does the prediction usually go up, go down, or behave in a mixed way?"
+                    "This chart describes model behavior, not direct causality. It shows how the selected feature aligns with higher or lower model output."
                 )
 
                 available_effect_features = shap_outputs["feature_importance_df"]["Feature"].head(12).tolist()
 
-                selected_effect_feature = st.selectbox(
-                    "Choose a feature to see how it changes the result",
+                selected_effect_features = st.multiselect(
+                    "Choose features for behavior charts and report",
                     options=available_effect_features,
-                    index=0 if available_effect_features else None
+                    default=available_effect_features[:1],
+                    help="Select up to three features. Each selected feature will be shown in the app and included in the exported report."
                 )
+
+                if len(selected_effect_features) > 3:
+                    st.warning("For readability, only the first three selected features will be shown and added to the report.")
+                    selected_effect_features = selected_effect_features[:3]
 
                 effect_fig = None
                 effect_note = None
+                pdp_ice_fig = None
+                pdp_ice_note = None
+                feature_detail_reports = []
 
-                if selected_effect_feature:
-                    effect_fig = plot_shap_feature_effect_figure(
-                        shap_values=shap_outputs["shap_values"],
-                        X_explain=shap_outputs["X_explain"],
-                        feature_name=selected_effect_feature
+                if selected_effect_features:
+                    show_info_box(
+                        "Feature Behavior Charts",
+                        "The left chart shows observed SHAP contribution: green points increased the model output and red points decreased it. The right chart runs controlled what-if checks by moving the selected feature while keeping other values fixed."
                     )
 
-                    effect_note = get_feature_effect_interpretation(
-                        shap_values=shap_outputs["shap_values"],
-                        X_explain=shap_outputs["X_explain"],
-                        feature_name=selected_effect_feature
+                    feature_tabs = (
+                        st.tabs([str(feature)[:28] for feature in selected_effect_features])
+                        if len(selected_effect_features) > 1 else [st.container()]
                     )
 
-                    eff_left, eff_mid, eff_right = st.columns([0.12, 0.76, 0.12])
-                    with eff_mid:
-                        if effect_fig is not None:
-                            show_chart_frame(effect_fig, use_container_width=True)
+                    for tab, selected_effect_feature in zip(feature_tabs, selected_effect_features):
+                        with tab:
+                            current_effect_fig = plot_shap_feature_effect_figure(
+                                shap_values=shap_outputs["shap_values"],
+                                X_explain=shap_outputs["X_explain"],
+                                feature_name=selected_effect_feature
+                            )
 
-                    show_chart_note(
-                        "Points above zero usually push the result upward, while points below zero tend to pull it downward. Color reflects the feature value level."
-                    )
-                    show_info_box("How to read this feature effect", effect_note)
+                            current_effect_note = get_feature_effect_interpretation(
+                                shap_values=shap_outputs["shap_values"],
+                                X_explain=shap_outputs["X_explain"],
+                                feature_name=selected_effect_feature
+                            )
+
+                            current_pdp_ice_fig = None
+                            current_pdp_ice_note = None
+                            if explained_model is not None:
+                                pdp_ice_data = compute_pdp_ice_data(
+                                    trained_model=explained_model,
+                                    X=shap_outputs["X_explain"],
+                                    feature_name=selected_effect_feature,
+                                    problem_type=problem_type,
+                                    grid_points=12,
+                                    ice_samples=30
+                                )
+                                current_pdp_ice_fig = plot_pdp_ice_figure(pdp_ice_data)
+                                current_pdp_ice_note = get_pdp_ice_interpretation(pdp_ice_data)
+
+                            chart_left, chart_right = st.columns(2)
+                            with chart_left:
+                                st.markdown("**Observed contribution**")
+                                if current_effect_fig is not None:
+                                    show_chart_frame(current_effect_fig, use_container_width=True)
+                                show_chart_note(
+                                    "Use this chart to see whether the feature mostly pushes predictions upward, downward, or behaves differently across rows."
+                                )
+                            with chart_right:
+                                st.markdown("**Controlled feature movement**")
+                                if current_pdp_ice_fig is not None:
+                                    show_chart_frame(current_pdp_ice_fig, use_container_width=True)
+                                show_chart_note(
+                                    "Use this chart to see how the model response changes when this feature is moved across its observed value range."
+                                )
+
+                            note_left, note_right = st.columns(2)
+                            with note_left:
+                                show_info_box("SHAP Effect Summary", current_effect_note)
+                            with note_right:
+                                show_story_panel("PDP / ICE Assessment", current_pdp_ice_note or "PDP / ICE assessment is not available for this feature.")
+
+                            feature_detail_reports.append({
+                                "feature_name": selected_effect_feature,
+                                "effect_fig": current_effect_fig,
+                                "effect_note": current_effect_note,
+                                "pdp_ice_fig": current_pdp_ice_fig,
+                                "pdp_ice_note": current_pdp_ice_note,
+                            })
+
+                            if effect_fig is None:
+                                effect_fig = current_effect_fig
+                                effect_note = current_effect_note
+                                pdp_ice_fig = current_pdp_ice_fig
+                                pdp_ice_note = current_pdp_ice_note
 
                 behavior_df = build_feature_behavior_summary(shap_outputs, top_n=8)
                 behavior_fig = plot_feature_behavior_summary_figure(behavior_df, top_n=8)
@@ -1785,19 +1945,18 @@ if uploaded_file is not None:
                     )
                 with behavior_col2:
                     st.subheader("Behavior Summary Table")
-                    st.dataframe(behavior_df.round(4), use_container_width=True)
+                    st.dataframe(behavior_df.head(6).round(4), use_container_width=True, height=240)
                     show_chart_note(
-                        "The table lists average effect strength and the typical direction of behavior for the features shown in the chart."
+                        "The table summarizes average impact strength and the dominant direction observed in the analysis sample."
                     )
 
-                st.session_state["shap_waterfall_fig"] = waterfall_fig
                 st.session_state["shap_effect_fig"] = effect_fig
-                st.session_state["shap_waterfall_note"] = waterfall_note
                 st.session_state["shap_effect_note"] = effect_note
-                st.session_state["local_contribution_df"] = local_table.copy()
-                st.session_state["local_contribution_fig"] = local_contribution_fig
                 st.session_state["feature_behavior_df"] = behavior_df.copy()
                 st.session_state["feature_behavior_fig"] = behavior_fig
+                st.session_state["pdp_ice_fig"] = pdp_ice_fig
+                st.session_state["pdp_ice_note"] = pdp_ice_note
+                st.session_state["feature_detail_reports"] = feature_detail_reports
 
                 show_section_divider()
                 show_download_section(
@@ -1812,17 +1971,19 @@ if uploaded_file is not None:
                     corr_table_for_report=st.session_state.get("corr_table_for_report"),
                     corr_heatmap_fig=st.session_state.get("corr_heatmap_fig"),
                     corr_profile_fig=st.session_state.get("corr_profile_fig"),
-                    shap_waterfall_fig=st.session_state.get("shap_waterfall_fig"),
                     shap_effect_fig=st.session_state.get("shap_effect_fig"),
-                    waterfall_note=st.session_state.get("shap_waterfall_note"),
                     effect_note=st.session_state.get("shap_effect_note"),
                     model_leaderboard_fig=st.session_state.get("model_leaderboard_fig"),
                     model_recommendation_text=st.session_state.get("model_recommendation_text"),
                     corr_profile_note=st.session_state.get("corr_profile_note"),
-                    local_contribution_df=st.session_state.get("local_contribution_df"),
-                    local_contribution_fig=st.session_state.get("local_contribution_fig"),
                     feature_behavior_df=st.session_state.get("feature_behavior_df"),
                     feature_behavior_fig=st.session_state.get("feature_behavior_fig"),
+                    kfold_df=st.session_state.get("kfold_df"),
+                    kfold_fig=st.session_state.get("kfold_fig"),
+                    kfold_note=st.session_state.get("kfold_note"),
+                    pdp_ice_fig=st.session_state.get("pdp_ice_fig"),
+                    pdp_ice_note=st.session_state.get("pdp_ice_note"),
+                    feature_detail_reports=st.session_state.get("feature_detail_reports"),
                 )
 
     except Exception as e:

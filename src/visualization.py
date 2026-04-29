@@ -258,7 +258,7 @@ def build_target_correlation_table(X, y, target_name="target", top_n=10):
     return corr_df
 
 
-def plot_correlation_heatmap_figure(X, y, target_name="Target", top_n=10):
+def plot_correlation_heatmap_figure(X, y, target_name="Target", top_n=8):
     corr_table = build_target_correlation_table(X, y, target_name=target_name, top_n=top_n)
 
     if corr_table.empty:
@@ -272,22 +272,26 @@ def plot_correlation_heatmap_figure(X, y, target_name="Target", top_n=10):
 
     corr_matrix = combined.corr(numeric_only=True)
 
-    fig, ax = plt.subplots(figsize=(4.8, 4.0), dpi=140)
+    label_count = len(corr_matrix.columns)
+    fig_size = max(4.6, min(6.2, label_count * 0.48))
+    fig, ax = plt.subplots(figsize=(fig_size, fig_size * 0.88), dpi=140)
     fig.patch.set_facecolor(FIG_BG)
 
     im = ax.imshow(corr_matrix.values, cmap="coolwarm", vmin=-1, vmax=1, aspect="auto")
     ax.set_title("Relationship heatmap", fontsize=10.5, pad=10)
 
+    display_labels = [_truncate_label(col, max_len=16) for col in corr_matrix.columns]
     ax.set_xticks(range(len(corr_matrix.columns)))
     ax.set_yticks(range(len(corr_matrix.index)))
-    ax.set_xticklabels(corr_matrix.columns, rotation=28, ha="right", fontsize=7)
-    ax.set_yticklabels(corr_matrix.index, fontsize=7)
+    ax.set_xticklabels(display_labels, rotation=42, ha="right", fontsize=6.5)
+    ax.set_yticklabels(display_labels, fontsize=6.8)
 
-    for i in range(corr_matrix.shape[0]):
-        for j in range(corr_matrix.shape[1]):
-            val = corr_matrix.iloc[i, j]
-            text_color = "white" if abs(val) > 0.55 else INK
-            ax.text(j, i, f"{val:.2f}", ha="center", va="center", fontsize=6.2, color=text_color)
+    if label_count <= 8:
+        for i in range(corr_matrix.shape[0]):
+            for j in range(corr_matrix.shape[1]):
+                val = corr_matrix.iloc[i, j]
+                text_color = "white" if abs(val) > 0.55 else INK
+                ax.text(j, i, f"{val:.2f}", ha="center", va="center", fontsize=5.8, color=text_color)
 
     for spine in ax.spines.values():
         spine.set_color(BORDER)
@@ -296,7 +300,7 @@ def plot_correlation_heatmap_figure(X, y, target_name="Target", top_n=10):
     cbar.outline.set_edgecolor(BORDER)
     cbar.ax.tick_params(labelsize=8, colors=SLATE)
 
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.25, right=0.94, top=0.90, bottom=0.28)
     return fig
 
 
@@ -311,7 +315,7 @@ def plot_correlation_profile_figure(corr_table, top_n=8):
     fig, ax = plt.subplots(figsize=(4.9, 3.1), dpi=140)
     fig.patch.set_facecolor(FIG_BG)
 
-    colors = [PRIMARY if value >= 0 else DANGER for value in plot_df["Correlation with Target"]]
+    colors = [SUCCESS if value >= 0 else "#EF4444" for value in plot_df["Correlation with Target"]]
     bars = ax.barh(
         plot_df["Display Feature"],
         plot_df["Correlation with Target"],
@@ -398,8 +402,8 @@ def plot_feature_behavior_summary_figure(behavior_df, top_n=8):
     plot_df = plot_df.sort_values("Average Strength", ascending=True)
 
     color_map = {
-        "Higher values usually raise prediction": PRIMARY,
-        "Higher values usually lower prediction": DANGER,
+        "Higher values usually raise prediction": SUCCESS,
+        "Higher values usually lower prediction": "#EF4444",
         "Mixed / non-linear effect": WARNING,
         "No clear pattern": "#94A3B8",
     }
@@ -578,4 +582,105 @@ def get_correlation_profile_interpretation(corr_table):
         f"This feature {direction} with the target, and the relationship looks {strength_text} "
         f"(correlation: {corr_value:.2f}). "
         f"This section does not prove causation; it simply highlights patterns that move together."
+    )
+
+
+def build_error_analysis_table(details, problem_type, top_n=10):
+    y_test = pd.Series(details.get("y_test", []), name="Actual").reset_index(drop=True)
+    y_pred = pd.Series(details.get("y_pred", []), name="Predicted").reset_index(drop=True)
+
+    if y_test.empty or y_pred.empty:
+        return pd.DataFrame()
+
+    if problem_type == "classification":
+        error_df = pd.DataFrame({"Actual": y_test, "Predicted": y_pred})
+        error_df = error_df[error_df["Actual"] != error_df["Predicted"]]
+
+        if error_df.empty:
+            return pd.DataFrame({
+                "Actual": ["No errors"],
+                "Predicted": ["No errors"],
+                "Count": [0]
+            })
+
+        return (
+            error_df
+            .groupby(["Actual", "Predicted"])
+            .size()
+            .reset_index(name="Count")
+            .sort_values("Count", ascending=False)
+            .head(top_n)
+            .reset_index(drop=True)
+        )
+
+    residuals = y_test.astype(float) - y_pred.astype(float)
+    return (
+        pd.DataFrame({
+            "Actual": y_test.astype(float),
+            "Predicted": y_pred.astype(float),
+            "Residual": residuals.astype(float),
+            "Absolute Error": residuals.abs().astype(float)
+        })
+        .sort_values("Absolute Error", ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+
+
+def plot_error_analysis_figure(error_df, problem_type):
+    if error_df is None or error_df.empty:
+        return None
+
+    fig, ax = plt.subplots(figsize=(5.2, 3.2), dpi=140)
+    fig.patch.set_facecolor(FIG_BG)
+
+    if problem_type == "classification":
+        if "No errors" in error_df.astype(str).values:
+            ax.text(0.5, 0.5, "No classification errors found", ha="center", va="center", fontsize=10, color=SLATE)
+            ax.axis("off")
+            return fig
+
+        plot_df = error_df.copy()
+        plot_df["Pair"] = plot_df.apply(lambda row: f"{row['Actual']} -> {row['Predicted']}", axis=1)
+        plot_df = plot_df.sort_values("Count", ascending=True)
+        ax.barh(plot_df["Pair"], plot_df["Count"], color=DANGER, edgecolor="#EA580C", linewidth=0.8, alpha=0.92)
+        ax.set_title("Most common wrong predictions", fontsize=10.5, pad=10)
+        ax.set_xlabel("Error count", fontsize=8.5)
+        ax.set_ylabel("")
+        _apply_clean_axis_style(ax, grid_axis="x")
+    else:
+        plot_df = error_df.sort_values("Absolute Error", ascending=True).copy()
+        labels = [f"Row {idx}" for idx in plot_df.index]
+        colors = ["#EF4444" if value >= 0 else PRIMARY for value in plot_df["Residual"]]
+        ax.barh(labels, plot_df["Residual"], color=colors, edgecolor="#CBD5E1", linewidth=0.8, alpha=0.92)
+        ax.axvline(0, color="#94A3B8", linewidth=1.0)
+        ax.set_title("Largest prediction errors", fontsize=10.5, pad=10)
+        ax.set_xlabel("Actual minus predicted", fontsize=8.5)
+        ax.set_ylabel("")
+        _apply_clean_axis_style(ax, grid_axis="x")
+
+    fig.tight_layout()
+    return fig
+
+
+def get_error_analysis_interpretation(error_df, problem_type):
+    if error_df is None or error_df.empty:
+        return "Error analysis could not be generated because prediction details were not available."
+
+    if problem_type == "classification":
+        if "No errors" in error_df.astype(str).values:
+            return "The selected test split did not contain classification errors for this model."
+
+        top = error_df.iloc[0]
+        return (
+            f"This section focuses only on mistakes. The most common mix-up is actual {top['Actual']} "
+            f"being predicted as {top['Predicted']} ({int(top['Count'])} time(s)). "
+            f"This helps users inspect where the model needs the most caution."
+        )
+
+    biggest = error_df.iloc[0]
+    return (
+        f"This section highlights the largest numeric mistakes. The biggest shown error is about "
+        f"{float(biggest['Absolute Error']):.3f}. Positive residuals mean the model predicted too low; "
+        f"negative residuals mean it predicted too high."
     )

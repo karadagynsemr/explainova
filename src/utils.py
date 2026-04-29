@@ -174,18 +174,20 @@ def generate_word_report(
         shap_summary_fig=None,
         corr_table: pd.DataFrame = None,
         corr_heatmap_fig=None,
-        shap_waterfall_fig=None,
         shap_effect_fig=None,
-        waterfall_note: str = None,
         effect_note: str = None,
         model_leaderboard_fig=None,
         model_recommendation_text: str = None,
         corr_profile_fig=None,
         corr_profile_note: str = None,
-        local_contribution_df: pd.DataFrame = None,
-        local_contribution_fig=None,
         feature_behavior_df: pd.DataFrame = None,
         feature_behavior_fig=None,
+        kfold_df: pd.DataFrame = None,
+        kfold_fig=None,
+        kfold_note: str = None,
+        pdp_ice_fig=None,
+        pdp_ice_note: str = None,
+        feature_detail_reports: list = None,
 ) -> BytesIO:
     from docx import Document
     from docx.shared import Pt, RGBColor
@@ -315,6 +317,31 @@ def generate_word_report(
     if results_df is not None and not results_df.empty:
         _add_dataframe_table(doc, results_df)
 
+    if kfold_df is not None and not kfold_df.empty:
+        doc.add_heading("Stability Check with K-Fold", level=2)
+        kfold_intro = doc.add_paragraph()
+        kfold_intro.add_run(
+            "K-fold validation repeats evaluation across several train/test splits. "
+            "It helps determine whether the model result is stable across different data partitions."
+        )
+        if kfold_note:
+            doc.add_paragraph(kfold_note)
+        if kfold_fig is not None:
+            _add_figure_to_doc(doc, kfold_fig, width_inches=5.9)
+        compact_kfold_cols = [
+            col for col in kfold_df.columns
+            if col in [
+                "Model", "Folds",
+                "ROC AUC Mean", "ROC AUC Std",
+                "F1 Score Mean", "F1 Score Std",
+                "Accuracy Mean", "Accuracy Std",
+                "R2 Score Mean", "R2 Score Std",
+                "MAE Mean", "MAE Std",
+                "RMSE Mean", "RMSE Std",
+            ]
+        ]
+        _add_dataframe_table(doc, kfold_df[compact_kfold_cols] if compact_kfold_cols else kfold_df)
+
     # ── SHAP Explainability ────────────────────────────────────────────────
     if shap_outputs is not None:
         doc.add_heading(f"SHAP Explanations - {shap_model_name}", level=1)
@@ -336,7 +363,7 @@ def generate_word_report(
                 "Items near the top influence the result more strongly and more consistently across the analyzed samples."
             )
 
-            top_df = importance_df.head(12).copy()
+            top_df = importance_df.head(8).copy()
             _add_dataframe_table(doc, top_df)
 
         if shap_bar_fig is not None:
@@ -355,51 +382,55 @@ def generate_word_report(
             )
             _add_figure_to_doc(doc, shap_summary_fig, width_inches=6.1)
 
-        if shap_waterfall_fig is not None:
-            doc.add_heading("Why This One Result Happened", level=2)
-
-            intro_local = doc.add_paragraph()
-            intro_local.add_run(
-                "This chart explains one prediction step by step. "
-                "It starts from the model's usual baseline and shows which features pushed the result upward or downward."
+        if feature_detail_reports:
+            doc.add_heading("Selected Feature Behavior", level=2)
+            feature_intro = doc.add_paragraph()
+            feature_intro.add_run(
+                "This section includes the feature-level behavior charts selected in the application. "
+                "The SHAP effect chart shows observed contribution direction, while PDP / ICE shows controlled model response when the feature value changes."
             )
 
-            if waterfall_note:
-                p = doc.add_paragraph()
-                p.add_run(waterfall_note)
+            for item in feature_detail_reports:
+                feature_name = item.get("feature_name", "Selected feature")
+                doc.add_heading(str(feature_name), level=3)
 
-            _add_figure_to_doc(doc, shap_waterfall_fig, width_inches=5.6)
+                effect_item_note = item.get("effect_note")
+                if effect_item_note:
+                    doc.add_paragraph(effect_item_note)
+                if item.get("effect_fig") is not None:
+                    _add_figure_to_doc(doc, item.get("effect_fig"), width_inches=5.3)
 
-        if local_contribution_fig is not None:
-            doc.add_heading("Main Drivers of This Result", level=2)
-            local_note = doc.add_paragraph()
-            local_note.add_run(
-                "This chart gives a quick visual summary of the features that mattered most for the selected example. "
-                "Bars moving right raise the result, while bars moving left lower it."
-            )
-            _add_figure_to_doc(doc, local_contribution_fig, width_inches=5.8)
+                pdp_item_note = item.get("pdp_ice_note")
+                if pdp_item_note:
+                    doc.add_paragraph(pdp_item_note)
+                if item.get("pdp_ice_fig") is not None:
+                    _add_figure_to_doc(doc, item.get("pdp_ice_fig"), width_inches=5.3)
+        else:
+            if shap_effect_fig is not None:
+                doc.add_heading("How One Feature Changes the Result", level=2)
 
-        if local_contribution_df is not None and not local_contribution_df.empty:
-            local_table_note = doc.add_paragraph()
-            local_table_note.add_run(
-                "The table below summarizes the strongest drivers of the same example numerically."
-            )
-            _add_dataframe_table(doc, local_contribution_df.head(6))
+                intro_effect = doc.add_paragraph()
+                intro_effect.add_run(
+                    "This chart shows how the model usually reacts when one feature changes. "
+                    "It helps reveal whether larger or smaller values tend to increase or decrease the result."
+                )
 
-        if shap_effect_fig is not None:
-            doc.add_heading("How One Feature Changes the Result", level=2)
+                if effect_note:
+                    p = doc.add_paragraph()
+                    p.add_run(effect_note)
 
-            intro_effect = doc.add_paragraph()
-            intro_effect.add_run(
-                "This chart shows how the model usually reacts when one feature changes. "
-                "It helps reveal whether larger or smaller values tend to increase or decrease the result."
-            )
+                _add_figure_to_doc(doc, shap_effect_fig, width_inches=5.5)
 
-            if effect_note:
-                p = doc.add_paragraph()
-                p.add_run(effect_note)
-
-            _add_figure_to_doc(doc, shap_effect_fig, width_inches=5.5)
+            if pdp_ice_fig is not None:
+                doc.add_heading("PDP / ICE Feature Movement", level=2)
+                pdp_intro = doc.add_paragraph()
+                pdp_intro.add_run(
+                    "PDP and ICE actively change one feature and show how the model response moves. "
+                    "This complements SHAP by showing model behavior under controlled what-if changes."
+                )
+                if pdp_ice_note:
+                    doc.add_paragraph(pdp_ice_note)
+                _add_figure_to_doc(doc, pdp_ice_fig, width_inches=5.8)
 
         if feature_behavior_fig is not None:
             doc.add_heading("Overall Behavior of Key Features", level=2)
@@ -411,7 +442,7 @@ def generate_word_report(
             _add_figure_to_doc(doc, feature_behavior_fig, width_inches=5.9)
 
         if feature_behavior_df is not None and not feature_behavior_df.empty:
-            _add_dataframe_table(doc, feature_behavior_df.head(8), title="Behavior summary table")
+            _add_dataframe_table(doc, feature_behavior_df.head(6), title="Behavior summary table")
 
     # ── Footer ─────────────────────────────────────────────────────────────
     doc.add_paragraph()
