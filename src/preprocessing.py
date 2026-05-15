@@ -484,6 +484,7 @@ def preprocess_data(
         user_selected_ordinal_columns=None,
         user_defined_ordinal_mappings=None,
         apply_feature_reduction=False,
+        feature_reduction_strategy="fast_interpretable",
         protected_original_features=None,
         low_variance_threshold=0.0001,
         high_correlation_threshold=0.95,
@@ -535,6 +536,9 @@ def preprocess_data(
         "extreme_outlier_report": {},
         "capped_outlier_columns": [],
         "feature_reduction_applied": False,
+        "feature_reduction_strategy": None,
+        "low_variance_threshold": low_variance_threshold,
+        "high_correlation_threshold": high_correlation_threshold,
         "protected_original_features": protected_original_features,
         "protected_transformed_features": [],
         "removed_low_variance_columns": [],
@@ -761,13 +765,13 @@ def preprocess_data(
         )
 
     if apply_feature_reduction:
-        problem_type = "classification" if report["target_encoded"] else "regression"
         protected_transformed = resolve_protected_transformed_columns(
             protected_original_features=protected_original_features,
             transformed_columns=X.columns.tolist()
         )
 
         report["feature_reduction_applied"] = True
+        report["feature_reduction_strategy"] = feature_reduction_strategy
         report["protected_transformed_features"] = list(sorted(protected_transformed))
 
         X, dropped_low_variance = remove_low_variance_features(
@@ -783,16 +787,6 @@ def preprocess_data(
             correlation_threshold=high_correlation_threshold
         )
         report["removed_high_correlation_columns"] = dropped_high_corr
-
-        X, dropped_low_importance, importance_df = keep_top_k_important_features(
-            X,
-            y,
-            problem_type=problem_type,
-            protected_columns=protected_transformed,
-            top_k=top_k_important_features
-        )
-        report["removed_low_importance_columns"] = dropped_low_importance
-        report["feature_importance_ranking"] = importance_df
 
         if X.shape[1] == 0:
             raise ValueError("Feature reduction removed all columns. Try disabling feature reduction or protecting important features.")

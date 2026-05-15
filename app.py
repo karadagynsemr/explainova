@@ -817,7 +817,7 @@ def show_preprocessing_explanations(report):
     if report.get("feature_reduction_applied"):
         explain_preprocessing_step(
             "Feature reduction for explainability",
-            "Because the dataset was large, optional feature reduction was used to simplify the model while preserving real feature names. Low-variance features, highly correlated features, and lower-importance features were reduced, except for columns explicitly protected by the user."
+            "Because the dataset was large, optional feature selection was used to simplify the model while preserving real feature names. Low-variance features and highly correlated features were removed."
         )
 
 
@@ -858,6 +858,36 @@ def get_best_model_info(results_df, problem_type):
 
     best_row = results_df.sort_values(by=metric, ascending=ascending).iloc[0]
     return best_row["Model"], metric, best_row[metric]
+
+
+def get_positive_class_label(problem_type, report, y=None):
+    if problem_type != "classification":
+        return None
+
+    mapping = report.get("target_label_mapping") or {}
+    if 1 in mapping:
+        return mapping[1]
+    if "1" in mapping:
+        return mapping["1"]
+
+    if y is not None:
+        values = pd.Series(y).dropna().unique().tolist()
+        if len(values) == 2:
+            try:
+                return str(sorted(values)[-1])
+            except Exception:
+                return str(values[-1])
+
+    return "positive class"
+
+
+def format_positive_class_text(positive_class_label):
+    if positive_class_label is None or str(positive_class_label).strip() == "":
+        return "class 1 / the positive class"
+    label_text = str(positive_class_label).strip()
+    if label_text in ["1", "1.0"]:
+        return "class 1"
+    return f"the positive class ({label_text})"
 
 
 def format_metric_value(value):
@@ -987,7 +1017,7 @@ def build_local_contribution_table(shap_outputs, sample_index, top_n=6):
     return df_local[["Feature", "Value", "SHAP Contribution", "Direction"]]
 
 
-def build_feature_behavior_summary(shap_outputs, top_n=8):
+def build_feature_behavior_summary(shap_outputs, top_n=8, problem_type=None):
     X_explain = shap_outputs["X_explain"]
     shap_values = np.array(shap_outputs["shap_values"], dtype=float)
     importance_df = shap_outputs["feature_importance_df"].head(top_n)
@@ -1002,12 +1032,20 @@ def build_feature_behavior_summary(shap_outputs, top_n=8):
             pattern = "No clear pattern"
         else:
             corr = np.corrcoef(feature_vals, feature_shap)[0, 1]
-            if corr >= 0.35:
-                pattern = "Higher values usually raise prediction"
-            elif corr <= -0.35:
-                pattern = "Higher values usually lower prediction"
+            if problem_type == "classification":
+                if corr >= 0.35:
+                    pattern = "Higher values move toward class 1"
+                elif corr <= -0.35:
+                    pattern = "Higher values move away from class 1"
+                else:
+                    pattern = "Mixed / non-linear effect"
             else:
-                pattern = "Mixed / non-linear effect"
+                if corr >= 0.35:
+                    pattern = "Higher values usually raise prediction"
+                elif corr <= -0.35:
+                    pattern = "Higher values usually lower prediction"
+                else:
+                    pattern = "Mixed / non-linear effect"
 
         rows.append({
             "Feature": feature_name,
@@ -1232,34 +1270,23 @@ if uploaded_file is not None:
         if large_dataset_flag:
             st.warning("This dataset is large. Preprocessing can still run, but model training may take longer.")
 
-        apply_feature_reduction = "No"
+        apply_feature_selection = "No"
+        feature_reduction_strategy = "fast_interpretable"
+        feature_selection_correlation_threshold = 0.95
         protected_original_features = []
 
         if feature_reduction_available:
             show_info_box(
                 "Feature Reduction for Explainability",
-                "Because this dataset is relatively large, you can optionally reduce the feature set without breaking feature-level interpretability."
+                "Because this dataset is relatively large, you can optionally reduce the feature set with Variance Threshold and Pairwise Correlation while keeping original feature names."
             )
 
-            apply_feature_reduction = st.radio(
-                "Would you like to apply explainability-friendly feature reduction?",
+            apply_feature_selection = st.radio(
+                "Apply feature selection?",
                 options=["No", "Yes"],
-                index=0,
-                help="This can simplify the model by removing low-variance, highly correlated, and lower-importance features while keeping original feature names."
+                index=1,
+                help="Uses only Variance Threshold and Pairwise Correlation for large or wide datasets."
             )
-
-            if apply_feature_reduction == "Yes":
-                protection_options = (
-                    selected_feature_columns
-                    if feature_mode == "Select features manually" and selected_feature_columns
-                    else available_feature_candidates
-                )
-
-                protected_original_features = st.multiselect(
-                    "Are there any original features that must definitely be kept?",
-                    options=protection_options,
-                    help="Selected features will be protected during feature reduction whenever possible."
-                )
 
         if st.button("Run Preprocessing"):
             reset_training_state()
@@ -1274,10 +1301,11 @@ if uploaded_file is not None:
                         selected_feature_columns=selected_feature_columns,
                         user_selected_ordinal_columns=user_selected_ordinal_columns,
                         user_defined_ordinal_mappings=user_defined_ordinal_mappings,
-                        apply_feature_reduction=(apply_feature_reduction == "Yes"),
+                        apply_feature_reduction=(apply_feature_selection == "Yes"),
+                        feature_reduction_strategy=feature_reduction_strategy,
                         protected_original_features=protected_original_features,
                         low_variance_threshold=0.0001,
-                        high_correlation_threshold=0.95,
+                        high_correlation_threshold=feature_selection_correlation_threshold,
                         top_k_important_features=40
                     )
 
@@ -1385,6 +1413,14 @@ if uploaded_file is not None:
                 outlier_df = build_outlier_dataframe(report)
                 st.dataframe(outlier_df, use_container_width=True)
                 show_list("Columns with Capped Extreme Outliers", report.get("capped_outlier_columns", []))
+
+                if report.get("feature_reduction_applied"):
+                    st.subheader("Feature Selection")
+                    st.write("Strategy: Variance Threshold + Pairwise Correlation")
+                    st.write(f"Low variance threshold: {report.get('low_variance_threshold')}")
+                    st.write(f"Pairwise correlation threshold: {report.get('high_correlation_threshold')}")
+                    show_list("Removed Low-Variance Features", report.get("removed_low_variance_columns", []))
+                    show_list("Removed Highly Correlated Features", report.get("removed_high_correlation_columns", []))
 
                 st.subheader("Target Information")
                 st.write(f"Target encoded: {report.get('target_encoded')}")
@@ -1770,9 +1806,11 @@ if uploaded_file is not None:
                 shap_bar_fig = st.session_state.get("shap_bar_fig")
                 shap_summary_fig = st.session_state.get("shap_summary_fig")
                 explained_model = detailed_results.get(shap_model_name, {}).get("trained_model")
+                positive_class_label = get_positive_class_label(problem_type, report, y)
+                positive_class_text = format_positive_class_text(positive_class_label)
 
                 st.subheader(f"SHAP Results for {shap_model_name}")
-                show_info_box("What SHAP shows", get_shap_intro_text())
+                show_info_box("What SHAP shows", get_shap_intro_text(problem_type, positive_class_label))
 
                 importance_df = shap_outputs["feature_importance_df"]
                 top_feature_name = importance_df.iloc[0]["Feature"] if not importance_df.empty else "-"
@@ -1795,8 +1833,12 @@ if uploaded_file is not None:
                     },
                     {
                         "label": "Reading mode",
-                        "value": "Cause and effect",
-                        "note": "Each chart explains what pushed the result up or down."
+                        "value": "Positive class" if problem_type == "classification" else "Prediction value",
+                        "note": (
+                            f"Positive SHAP values move the model toward {positive_class_text}."
+                            if problem_type == "classification"
+                            else "Each chart explains what pushed the predicted value up or down."
+                        )
                     }
                 ])
                 show_story_panel(
@@ -1826,7 +1868,11 @@ if uploaded_file is not None:
                     if shap_summary_fig is not None:
                         show_chart_frame(shap_summary_fig, use_container_width=True)
                 show_chart_note(
-                    "Each point represents one row. Position indicates whether the feature increased or decreased the model output for that row."
+                    (
+                        f"Each point represents one row. Points to the right increase support for {positive_class_text}; points to the left decrease it."
+                        if problem_type == "classification"
+                        else "Each point represents one row. Position indicates whether the feature increased or decreased the predicted value for that row."
+                    )
                 )
 
                 st.subheader("How One Feature Changes the Result")
@@ -1835,7 +1881,11 @@ if uploaded_file is not None:
                 )
 
                 show_chart_note(
-                    "This chart describes model behavior, not direct causality. It shows how the selected feature aligns with higher or lower model output."
+                    (
+                        f"This chart describes model behavior, not direct causality. For this classification model, positive effects mean stronger movement toward {positive_class_text}."
+                        if problem_type == "classification"
+                        else "This chart describes model behavior, not direct causality. It shows how the selected feature aligns with higher or lower predicted values."
+                    )
                 )
 
                 available_effect_features = shap_outputs["feature_importance_df"]["Feature"].head(12).tolist()
@@ -1860,7 +1910,11 @@ if uploaded_file is not None:
                 if selected_effect_features:
                     show_info_box(
                         "Feature Behavior Charts",
-                        "The left chart shows observed SHAP contribution: green points increased the model output and red points decreased it. The right chart runs controlled what-if checks by moving the selected feature while keeping other values fixed."
+                        (
+                            f"The left chart shows observed SHAP contribution: green points increase support for {positive_class_text}, while red points decrease it. The right chart runs controlled what-if checks by moving the selected feature while keeping other values fixed."
+                            if problem_type == "classification"
+                            else "The left chart shows observed SHAP contribution: green points increased the predicted value and red points decreased it. The right chart runs controlled what-if checks by moving the selected feature while keeping other values fixed."
+                        )
                     )
 
                     feature_tabs = (
@@ -1873,13 +1927,17 @@ if uploaded_file is not None:
                             current_effect_fig = plot_shap_feature_effect_figure(
                                 shap_values=shap_outputs["shap_values"],
                                 X_explain=shap_outputs["X_explain"],
-                                feature_name=selected_effect_feature
+                                feature_name=selected_effect_feature,
+                                problem_type=problem_type,
+                                positive_class_label=positive_class_label
                             )
 
                             current_effect_note = get_feature_effect_interpretation(
                                 shap_values=shap_outputs["shap_values"],
                                 X_explain=shap_outputs["X_explain"],
-                                feature_name=selected_effect_feature
+                                feature_name=selected_effect_feature,
+                                problem_type=problem_type,
+                                positive_class_label=positive_class_label
                             )
 
                             current_pdp_ice_fig = None
@@ -1891,7 +1949,8 @@ if uploaded_file is not None:
                                     feature_name=selected_effect_feature,
                                     problem_type=problem_type,
                                     grid_points=12,
-                                    ice_samples=30
+                                    ice_samples=30,
+                                    positive_class_label=positive_class_label
                                 )
                                 current_pdp_ice_fig = plot_pdp_ice_figure(pdp_ice_data)
                                 current_pdp_ice_note = get_pdp_ice_interpretation(pdp_ice_data)
@@ -1902,7 +1961,11 @@ if uploaded_file is not None:
                                 if current_effect_fig is not None:
                                     show_chart_frame(current_effect_fig, use_container_width=True)
                                 show_chart_note(
-                                    "Use this chart to see whether the feature mostly pushes predictions upward, downward, or behaves differently across rows."
+                                    (
+                                        f"Use this chart to see whether the feature mostly moves predictions toward {positive_class_text}, away from it, or behaves differently across rows."
+                                        if problem_type == "classification"
+                                        else "Use this chart to see whether the feature mostly pushes predicted values upward, downward, or behaves differently across rows."
+                                    )
                                 )
                             with chart_right:
                                 st.markdown("**Controlled feature movement**")
@@ -1932,7 +1995,7 @@ if uploaded_file is not None:
                                 pdp_ice_fig = current_pdp_ice_fig
                                 pdp_ice_note = current_pdp_ice_note
 
-                behavior_df = build_feature_behavior_summary(shap_outputs, top_n=8)
+                behavior_df = build_feature_behavior_summary(shap_outputs, top_n=8, problem_type=problem_type)
                 behavior_fig = plot_feature_behavior_summary_figure(behavior_df, top_n=8)
 
                 behavior_col1, behavior_col2 = st.columns([1.05, 0.95])
@@ -1941,7 +2004,11 @@ if uploaded_file is not None:
                     if behavior_fig is not None:
                         show_chart_frame(behavior_fig, use_container_width=True)
                     show_chart_note(
-                        "This summary chart quickly shows whether high-impact features usually raise the result, lower it, or behave in a mixed way."
+                        (
+                            f"This summary chart shows whether high-impact features usually move predictions toward {positive_class_text}, away from it, or behave in a mixed way."
+                            if problem_type == "classification"
+                            else "This summary chart quickly shows whether high-impact features usually raise the predicted value, lower it, or behave in a mixed way."
+                        )
                     )
                 with behavior_col2:
                     st.subheader("Behavior Summary Table")

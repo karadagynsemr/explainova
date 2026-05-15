@@ -404,6 +404,8 @@ def plot_feature_behavior_summary_figure(behavior_df, top_n=8):
     color_map = {
         "Higher values usually raise prediction": SUCCESS,
         "Higher values usually lower prediction": "#EF4444",
+        "Higher values move toward class 1": SUCCESS,
+        "Higher values move away from class 1": "#EF4444",
         "Mixed / non-linear effect": WARNING,
         "No clear pattern": "#94A3B8",
     }

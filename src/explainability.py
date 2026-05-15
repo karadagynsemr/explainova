@@ -274,7 +274,22 @@ def plot_shap_waterfall_figure(base_values, shap_values, X_explain, sample_index
     return current_fig
 
 
-def plot_shap_feature_effect_figure(shap_values, X_explain, feature_name):
+def _format_positive_class_reference(positive_class_label=None):
+    if positive_class_label is None or str(positive_class_label).strip() == "":
+        return "class 1 / the positive class"
+    label_text = str(positive_class_label).strip()
+    if label_text in ["1", "1.0"]:
+        return "class 1"
+    return f"the positive class ({label_text})"
+
+
+def plot_shap_feature_effect_figure(
+        shap_values,
+        X_explain,
+        feature_name,
+        problem_type=None,
+        positive_class_label=None
+):
     X_explain = _sanitize_feature_frame(X_explain)
     shap_values = np.array(shap_values, dtype=float)
 
@@ -300,9 +315,17 @@ def plot_shap_feature_effect_figure(shap_values, X_explain, feature_name):
     )
 
     ax.axhline(0, color="#94A3B8", linestyle="--", linewidth=1)
-    ax.set_title(f"How the model reacts when {feature_name} changes", fontsize=10, pad=10)
+    if problem_type == "classification":
+        target_text = _format_positive_class_reference(positive_class_label)
+        title = f"How {feature_name} affects movement toward {target_text}"
+        ylabel = f"Impact toward {target_text}"
+    else:
+        title = f"How the model reacts when {feature_name} changes"
+        ylabel = "Impact on prediction"
+
+    ax.set_title(title, fontsize=10, pad=10)
     ax.set_xlabel(feature_name, fontsize=9)
-    ax.set_ylabel("Impact on prediction", fontsize=9)
+    ax.set_ylabel(ylabel, fontsize=9)
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -356,7 +379,13 @@ def get_waterfall_interpretation(base_values, shap_values, X_explain, sample_ind
     )
 
 
-def get_feature_effect_interpretation(shap_values, X_explain, feature_name):
+def get_feature_effect_interpretation(
+        shap_values,
+        X_explain,
+        feature_name,
+        problem_type=None,
+        positive_class_label=None
+):
     X_explain = _sanitize_feature_frame(X_explain)
     shap_values = np.array(shap_values, dtype=float)
 
@@ -375,12 +404,21 @@ def get_feature_effect_interpretation(shap_values, X_explain, feature_name):
 
     corr = np.corrcoef(feature_vals, feature_shap)[0, 1]
 
-    if corr >= 0.35:
-        trend = "when this feature increases, the model usually pushes the result upward"
-    elif corr <= -0.35:
-        trend = "when this feature increases, the model usually pulls the result downward"
+    if problem_type == "classification":
+        target_text = _format_positive_class_reference(positive_class_label)
+        if corr >= 0.35:
+            trend = f"higher values usually increase movement toward {target_text}"
+        elif corr <= -0.35:
+            trend = f"higher values usually move the model away from {target_text}"
+        else:
+            trend = f"the effect on {target_text} is mixed, so the relationship is not a simple straight pattern"
     else:
-        trend = "the effect is more mixed, so the relationship does not follow a simple straight pattern"
+        if corr >= 0.35:
+            trend = "when this feature increases, the model usually pushes the predicted value upward"
+        elif corr <= -0.35:
+            trend = "when this feature increases, the model usually pulls the predicted value downward"
+        else:
+            trend = "the effect is more mixed, so the relationship does not follow a simple straight pattern"
 
     shap_strength = np.mean(np.abs(feature_shap))
 
@@ -407,10 +445,18 @@ def get_shap_selection_guidance(problem_type, has_roc_auc=False):
     )
 
 
-def get_shap_intro_text():
+def get_shap_intro_text(problem_type=None, positive_class_label=None):
+    if problem_type == "classification":
+        target_text = _format_positive_class_reference(positive_class_label)
+        return (
+            f"SHAP explains which features moved the model toward or away from {target_text}. "
+            f"Positive SHAP values increase the model's support for {target_text}; negative values decrease it. "
+            "The larger the value, the stronger that feature's influence."
+        )
+
     return (
         "SHAP explains which features influenced a model result and by how much. "
-        "Positive values push the prediction upward, while negative values pull it downward. "
+        "Positive values push the predicted value upward, while negative values pull it downward. "
         "The larger the value, the stronger that feature's influence."
     )
 
@@ -629,7 +675,15 @@ def get_learning_curve_interpretation(curve_data):
     return f"{fit_text} {data_text}"
 
 
-def compute_pdp_ice_data(trained_model, X, feature_name, problem_type, grid_points=12, ice_samples=30):
+def compute_pdp_ice_data(
+        trained_model,
+        X,
+        feature_name,
+        problem_type,
+        grid_points=12,
+        ice_samples=30,
+        positive_class_label=None
+):
     X = _sanitize_feature_frame(X)
     if X.empty or feature_name not in X.columns:
         return None
@@ -657,12 +711,19 @@ def compute_pdp_ice_data(trained_model, X, feature_name, problem_type, grid_poin
         pdp_values.append(float(np.mean(preds)))
 
     ice_matrix = np.array(ice_lines).T
+    if problem_type == "classification":
+        score_label = f"Probability of {_format_positive_class_reference(positive_class_label)}"
+    else:
+        score_label = "Predicted value"
+
     return {
         "feature_name": feature_name,
         "grid": np.array(grid, dtype=float),
         "pdp": np.array(pdp_values, dtype=float),
         "ice": ice_matrix,
-        "score_label": "Positive-class probability" if problem_type == "classification" else "Predicted value"
+        "score_label": score_label,
+        "problem_type": problem_type,
+        "positive_class_label": positive_class_label
     }
 
 
@@ -700,12 +761,22 @@ def get_pdp_ice_interpretation(pdp_ice_data):
 
     change = float(pdp[-1] - pdp[0])
     feature_name = pdp_ice_data["feature_name"]
-    if change > 0:
-        direction = "is associated with a higher model output"
-    elif change < 0:
-        direction = "is associated with a lower model output"
+    problem_type = pdp_ice_data.get("problem_type")
+    if problem_type == "classification":
+        target_text = _format_positive_class_reference(pdp_ice_data.get("positive_class_label"))
+        if change > 0:
+            direction = f"increases the model's probability for {target_text}"
+        elif change < 0:
+            direction = f"decreases the model's probability for {target_text}"
+        else:
+            direction = f"does not show a clear directional change for {target_text}"
     else:
-        direction = "does not show a clear directional change in model output"
+        if change > 0:
+            direction = "is associated with a higher predicted value"
+        elif change < 0:
+            direction = "is associated with a lower predicted value"
+        else:
+            direction = "does not show a clear directional change in the predicted value"
 
     return (
         f"The chart varies only {feature_name} while holding the remaining feature values fixed. "

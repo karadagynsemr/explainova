@@ -75,10 +75,9 @@ def _build_preprocessing_steps(report: dict) -> list:
     if report.get("feature_reduction_applied"):
         low_var = len(report.get("removed_low_variance_columns", []))
         high_corr = len(report.get("removed_high_correlation_columns", []))
-        low_imp = len(report.get("removed_low_importance_columns", []))
         steps.append(
-            f"Feature reduction applied - removed {low_var} low-variance, "
-            f"{high_corr} highly-correlated, and {low_imp} low-importance feature(s)."
+            f"Feature selection applied with Variance Threshold and Pairwise Correlation - "
+            f"removed {low_var} low-variance and {high_corr} highly-correlated feature(s)."
         )
 
     return steps
