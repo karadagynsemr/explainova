@@ -9,6 +9,21 @@ from sklearn.model_selection import KFold, StratifiedKFold, cross_validate, lear
 from sklearn.metrics import accuracy_score, r2_score
 
 
+COLORS = {
+    "model": "#3B82F6",
+    "shap": "#8B5CF6",
+    "shap_dark": "#6D28D9",
+    "preprocessing": "#10B981",
+    "preprocessing_dark": "#059669",
+    "warning": "#F59E0B",
+    "danger": "#EF4444",
+    "slate": "#334155",
+    "border": "#CBD5E1",
+    "grid": "#E2E8F0",
+    "fig_bg": "#F6F8FC",
+}
+
+
 def _sanitize_feature_frame(X: pd.DataFrame) -> pd.DataFrame:
     if X is None or X.empty:
         raise ValueError("No feature data is available for SHAP analysis.")
@@ -178,14 +193,14 @@ def plot_shap_importance_bar(feature_importance_df, top_n=12):
     plot_df["Display Feature"] = plot_df["Feature"].apply(lambda x: _truncate_feature_name(x, max_len=28))
 
     fig, ax = plt.subplots(figsize=(5.0, 3.2), dpi=140)
-    fig.patch.set_facecolor("#F6F8FC")
+    fig.patch.set_facecolor(COLORS["fig_bg"])
     ax.set_facecolor("#FFFFFF")
 
     ax.barh(
         plot_df["Display Feature"][::-1],
         plot_df["Mean |SHAP Value|"][::-1],
-        color="#6366F1",
-        edgecolor="#4F46E5",
+        color=COLORS["shap"],
+        edgecolor=COLORS["shap_dark"],
         linewidth=0.8,
         alpha=0.9
     )
@@ -214,7 +229,7 @@ def plot_shap_summary_figure(shap_values, X_explain, max_display=12):
 
     plt.close("all")
     fig = plt.figure(figsize=(6.3, 3.9), dpi=140)
-    fig.patch.set_facecolor("#F6F8FC")
+    fig.patch.set_facecolor(COLORS["fig_bg"])
 
     shap.summary_plot(
         shap_values,
@@ -226,7 +241,7 @@ def plot_shap_summary_figure(shap_values, X_explain, max_display=12):
 
     current_fig = plt.gcf()
     current_fig.set_size_inches(6.3, 3.9)
-    current_fig.patch.set_facecolor("#F6F8FC")
+    current_fig.patch.set_facecolor(COLORS["fig_bg"])
 
     for ax in current_fig.axes:
         ax.set_facecolor("#FFFFFF")
@@ -304,7 +319,7 @@ def plot_shap_feature_effect_figure(
     fig.patch.set_facecolor("#F6F8FC")
     ax.set_facecolor("#FFFFFF")
 
-    point_colors = np.where(feature_shap >= 0, "#10B981", "#EF4444")
+    point_colors = np.where(feature_shap >= 0, COLORS["preprocessing"], COLORS["danger"])
     scatter = ax.scatter(
         feature_vals,
         feature_shap,
@@ -528,14 +543,14 @@ def plot_kfold_stability_figure(kfold_df, problem_type, metric_name=None):
     labels = [_truncate_feature_name(item, max_len=24) for item in plot_df["Model"]]
 
     fig, ax = plt.subplots(figsize=(4.4, 2.65), dpi=140)
-    fig.patch.set_facecolor("#F6F8FC")
+    fig.patch.set_facecolor(COLORS["fig_bg"])
 
     ax.barh(
         labels,
         plot_df[metric],
         xerr=plot_df[std_metric] if std_metric in plot_df.columns else None,
-        color="#10B981",
-        edgecolor="#059669",
+        color=COLORS["preprocessing"],
+        edgecolor=COLORS["preprocessing_dark"],
         linewidth=0.8,
         alpha=0.92
     )
@@ -628,7 +643,7 @@ def plot_learning_curve_figure(curve_data):
         return None
 
     fig, ax = plt.subplots(figsize=(5.4, 3.25), dpi=140)
-    fig.patch.set_facecolor("#F6F8FC")
+    fig.patch.set_facecolor(COLORS["fig_bg"])
 
     train_sizes = curve_data["train_sizes"]
     train_mean = curve_data["train_mean"]
@@ -739,7 +754,7 @@ def plot_pdp_ice_figure(pdp_ice_data):
     for row in ice:
         ax.plot(grid, row, color="#94A3B8", linewidth=0.75, alpha=0.25)
 
-    trend_color = "#10B981" if pdp_ice_data["pdp"][-1] >= pdp_ice_data["pdp"][0] else "#EF4444"
+    trend_color = COLORS["preprocessing"] if pdp_ice_data["pdp"][-1] >= pdp_ice_data["pdp"][0] else COLORS["danger"]
     ax.plot(grid, pdp_ice_data["pdp"], color=trend_color, linewidth=2.6, marker="o", label="Average behavior")
     ax.set_title(f"What changes when {pdp_ice_data['feature_name']} changes?", fontsize=10.5, pad=10)
     ax.set_xlabel(pdp_ice_data["feature_name"], fontsize=8.5)

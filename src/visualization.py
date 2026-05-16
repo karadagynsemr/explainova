@@ -1,19 +1,35 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 
 
-PRIMARY = "#2563EB"
-PRIMARY_DARK = "#1D4ED8"
-SECONDARY = "#0EA5E9"
-SUCCESS = "#10B981"
-WARNING = "#F59E0B"
-DANGER = "#F97316"
+COLORS = {
+    "model": "#3B82F6",
+    "model_dark": "#1D4ED8",
+    "model_soft": "#93C5FD",
+    "shap": "#8B5CF6",
+    "preprocessing": "#10B981",
+    "warning": "#F59E0B",
+    "matrix": "#14B8A6",
+    "danger": "#EF4444",
+}
+
+PRIMARY = COLORS["model"]
+PRIMARY_DARK = COLORS["model_dark"]
+SECONDARY = COLORS["model_soft"]
+SUCCESS = COLORS["preprocessing"]
+WARNING = COLORS["warning"]
+DANGER = COLORS["danger"]
 INK = "#0F172A"
 SLATE = "#334155"
 BORDER = "#CBD5E1"
 GRID = "#E2E8F0"
 FIG_BG = "#F6F8FC"
+CONFUSION_CMAP = LinearSegmentedColormap.from_list(
+    "explainova_confusion",
+    ["#ECFEFF", COLORS["matrix"], "#0F766E"]
+)
 
 
 def _apply_clean_axis_style(ax, grid_axis="y"):
@@ -49,7 +65,7 @@ def plot_confusion_matrix_figure(confusion_matrix_array, class_labels):
     fig, ax = plt.subplots(figsize=(3.6, 3.0), dpi=140)
     fig.patch.set_facecolor(FIG_BG)
 
-    im = ax.imshow(confusion_matrix_array, aspect="auto", cmap="Blues")
+    im = ax.imshow(confusion_matrix_array, aspect="auto", cmap=CONFUSION_CMAP)
     ax.set_title("Prediction distribution", fontsize=10.5, pad=8)
     ax.set_xlabel("Predicted class", fontsize=8.5)
     ax.set_ylabel("Actual class", fontsize=8.5)
@@ -59,13 +75,23 @@ def plot_confusion_matrix_figure(confusion_matrix_array, class_labels):
     ax.set_xticklabels(class_labels, rotation=18, ha="right", fontsize=7.5)
     ax.set_yticklabels(class_labels, fontsize=7.5)
 
-    max_val = confusion_matrix_array.max() if confusion_matrix_array.size > 0 else 0
-
     for i in range(confusion_matrix_array.shape[0]):
         for j in range(confusion_matrix_array.shape[1]):
             val = confusion_matrix_array[i, j]
-            text_color = "white" if max_val > 0 and val > max_val * 0.55 else INK
-            ax.text(j, i, str(val), ha="center", va="center", fontsize=7.3, color=text_color)
+            rgba = im.cmap(im.norm(val))
+            luminance = (0.299 * rgba[0]) + (0.587 * rgba[1]) + (0.114 * rgba[2])
+            text_color = INK if luminance > 0.58 else "#F8FAFC"
+            annotation = ax.text(
+                j,
+                i,
+                str(val),
+                ha="center",
+                va="center",
+                fontsize=7.6,
+                fontweight=800,
+                color=text_color
+            )
+            annotation.set_gid("confusion-cell-annotation")
 
     ax.grid(False)
     for spine in ax.spines.values():

@@ -1,8 +1,10 @@
 import os
 import re
+import html as html_lib
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.data_loader import load_dataset
 from src.preprocessing import preprocess_data, suggest_ordinal_columns
@@ -49,6 +51,877 @@ st.set_page_config(
     layout="wide"
 )
 
+dark_mode = st.sidebar.toggle(
+    "Dark mode",
+    value=st.session_state.get("dark_mode", False),
+    help="Switch the workspace to a darker visual theme."
+)
+st.session_state["dark_mode"] = dark_mode
+
+dark_theme_css = """
+    :root {
+        --bg-main: #111827;
+        --bg-soft: #172033;
+        --card-bg: #162033;
+        --card-border: #2D3B52;
+        --text-main: #E5E7EB;
+        --text-soft: #CBD5E1;
+    }
+
+    .stApp {
+        background:
+            radial-gradient(circle at top right, rgba(139,92,246,0.18), transparent 25%),
+            radial-gradient(circle at top left, rgba(16,185,129,0.12), transparent 24%),
+            linear-gradient(180deg, #08111F 0%, #111827 100%) !important;
+    }
+
+    .hero-card {
+        background: linear-gradient(135deg, #4C1D95 0%, #1D4ED8 55%, #047857 100%);
+        border-color: rgba(255,255,255,0.14);
+        box-shadow: 0 24px 54px rgba(0, 0, 0, 0.34);
+    }
+
+    .status-strip,
+    .stepper-wrap,
+    .section-box,
+    .summary-card,
+    .chart-frame,
+    .metric-comment,
+    .chart-note,
+    .order-box,
+    .download-card,
+    div[data-testid="stMetric"],
+    div[data-testid="stDataFrame"],
+    .stExpander {
+        background: linear-gradient(180deg, #162033 0%, #111827 100%) !important;
+        border-color: #2D3B52 !important;
+        box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24) !important;
+    }
+
+    [data-testid="stDataFrame"] {
+        background: #111827 !important;
+        border-color: #334155 !important;
+    }
+
+    [data-testid="stDataFrame"] *,
+    [data-testid="stTable"] *,
+    [data-testid="stDataFrame"] [role="grid"],
+    [data-testid="stDataFrame"] [role="row"],
+    [data-testid="stDataFrame"] [role="gridcell"],
+    [data-testid="stDataFrame"] [role="columnheader"] {
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+        border-color: #263449 !important;
+    }
+
+    .dark-table-wrap {
+        background: #111827;
+        border: 1px solid #334155;
+        border-radius: 16px;
+        overflow: auto;
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.20);
+        margin: 0.35rem 0 1rem 0;
+    }
+
+    .dark-table-wrap table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        background: #111827 !important;
+        color: #E5E7EB !important;
+        font-size: 0.9rem;
+    }
+
+    .dark-table-wrap thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #0F172A !important;
+        color: #CBD5E1 !important;
+        border-bottom: 1px solid #334155 !important;
+        border-right: 1px solid #263449 !important;
+        padding: 0.72rem 0.75rem;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    .dark-table-wrap tbody th,
+    .dark-table-wrap tbody td {
+        background: #162033 !important;
+        color: #E5E7EB !important;
+        border-bottom: 1px solid #263449 !important;
+        border-right: 1px solid #263449 !important;
+        padding: 0.66rem 0.75rem;
+        white-space: nowrap;
+    }
+
+    .dark-table-wrap tbody tr:nth-child(even) th,
+    .dark-table-wrap tbody tr:nth-child(even) td {
+        background: #111827 !important;
+    }
+
+    .dark-table-wrap tbody tr:hover th,
+    .dark-table-wrap tbody tr:hover td {
+        background: #1E293B !important;
+    }
+
+    .dark-table-wrap thead th:first-child {
+        border-top-left-radius: 15px;
+    }
+
+    .dark-table-wrap thead th:last-child {
+        border-top-right-radius: 15px;
+    }
+
+    .dark-table-wrap tbody tr:last-child th:first-child {
+        border-bottom-left-radius: 15px;
+    }
+
+    .dark-table-wrap tbody tr:last-child td:last-child {
+        border-bottom-right-radius: 15px;
+    }
+
+    .compact-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(16, 185, 129, 0.12);
+        border: 1px solid rgba(16, 185, 129, 0.34);
+        color: #D1FAE5;
+        border-radius: 12px;
+        padding: 9px 12px;
+        margin: 8px 0 10px 0;
+        font-weight: 750;
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
+    }
+
+    .compact-status::before {
+        content: "✓";
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 999px;
+        background: #10B981;
+        color: #FFFFFF;
+        font-size: 0.82rem;
+        font-weight: 900;
+    }
+
+    .insight-box {
+        background: linear-gradient(180deg, #17233A 0%, #111C2F 100%) !important;
+        border-color: #2D3B52 !important;
+    }
+
+    .story-panel {
+        background: linear-gradient(135deg, #16213A 0%, #111827 100%) !important;
+        border-color: #334155 !important;
+    }
+
+    h1, h2, h3, h4, p, li, label, span, div {
+        color: var(--text-main);
+    }
+
+    .sidebar-shell {
+        background: linear-gradient(180deg, #162033 0%, #111827 100%) !important;
+        border-color: #2D3B52 !important;
+        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28) !important;
+    }
+
+    .sidebar-stage-card {
+        background: rgba(17, 24, 39, 0.82) !important;
+        border-color: #2D3B52 !important;
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24) !important;
+    }
+
+    .sidebar-stage-card.active {
+        background: linear-gradient(135deg, rgba(139,92,246,0.22), rgba(59,130,246,0.14)) !important;
+    }
+
+    .sidebar-stage-index {
+        background: #1E293B !important;
+        color: #C4B5FD !important;
+    }
+
+    .sidebar-stage-card.ready .sidebar-stage-index {
+        background: rgba(16,185,129,0.18) !important;
+        color: #6EE7B7 !important;
+    }
+
+    .sidebar-stage-card.active .sidebar-stage-index {
+        background: var(--accent-shap) !important;
+        color: white !important;
+    }
+
+    .download-title,
+    .insight-title,
+    .story-text,
+    div[data-testid="stMetricValue"],
+    div[data-testid="stRadio"] label,
+    div[data-testid="stDataFrame"],
+    .summary-value {
+        color: #E5E7EB !important;
+    }
+
+    .download-subtitle,
+    .insight-text,
+    .metric-comment,
+    .chart-note,
+    .summary-note,
+    .section-subtitle,
+    .status-strip,
+    .story-title {
+        color: #CBD5E1 !important;
+    }
+
+    .summary-label,
+    div[data-testid="stMetricLabel"] {
+        color: #A5B4FC !important;
+    }
+
+    div[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0B1220 0%, #111827 100%) !important;
+    }
+
+    section[data-testid="stSidebar"],
+    div[data-testid="stSidebarContent"] {
+        background: linear-gradient(180deg, #0B1220 0%, #111827 100%) !important;
+    }
+
+    div[data-testid="stSidebar"] label,
+    div[data-testid="stSidebar"] p,
+    div[data-testid="stSidebar"] span,
+    div[data-testid="stSidebar"] div {
+        color: #E5E7EB !important;
+    }
+
+    header[data-testid="stHeader"] {
+        background: linear-gradient(180deg, #111827 0%, rgba(17,24,39,0.92) 100%) !important;
+        border-bottom: 1px solid #1F2937 !important;
+    }
+
+    header[data-testid="stHeader"] button,
+    header[data-testid="stHeader"] button span {
+        color: #CBD5E1 !important;
+        -webkit-text-fill-color: #CBD5E1 !important;
+        opacity: 1 !important;
+    }
+
+    header[data-testid="stHeader"] button:has(span[class*="material"]),
+    header[data-testid="stHeader"] [data-testid="collapsedControl"],
+    header[data-testid="stHeader"] [data-testid="stSidebarCollapsedControl"] {
+        background: #111827 !important;
+        border: 1px solid #334155 !important;
+        border-radius: 10px !important;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22) !important;
+    }
+
+    div[data-testid="stToolbar"],
+    div[data-testid="stDecoration"] {
+        background: transparent !important;
+    }
+
+    section.main,
+    div[data-testid="stAppViewContainer"] {
+        background: linear-gradient(180deg, #08111F 0%, #111827 100%) !important;
+    }
+
+    [data-testid="stFileUploader"],
+    [data-testid="stFileUploader"] section,
+    [data-testid="stFileUploaderDropzone"],
+    [data-testid="stFileUploaderDropzone"] > div,
+    [data-testid="stFileUploaderDropzone"] div,
+    [data-testid="stFileUploaderDropzoneInstructions"],
+    [data-testid="stFileUploaderFile"],
+    [data-testid="stFileUploaderFile"] > div,
+    [data-testid="stFileUploaderFileData"],
+    [data-testid="stFileUploaderFileName"] {
+        background: #111827 !important;
+        border-color: #334155 !important;
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+    }
+
+    [data-testid="stFileUploader"] button {
+        background: #1E293B !important;
+        border: 1px solid #334155 !important;
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+        box-shadow: none !important;
+    }
+
+    [data-testid="stFileUploaderDropzone"] {
+        background: #111827 !important;
+        background-color: #111827 !important;
+    }
+
+    [data-testid="stFileUploaderDropzone"] div {
+        background-color: #111827 !important;
+    }
+
+    [data-testid="stFileUploaderDropzone"] div:has([data-testid="stFileUploaderFileName"]),
+    [data-testid="stFileUploaderDropzone"] div:has([title$=".csv" i]),
+    [data-testid="stFileUploaderDropzone"] div:has([title$=".xlsx" i]),
+    [data-testid="stFileUploaderDropzone"] div:has([title$=".xls" i]),
+    [data-testid="stFileUploaderDropzone"] div:has([title$=".tsv" i]) {
+        background: #1E293B !important;
+        background-color: #1E293B !important;
+        border-color: #334155 !important;
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+    }
+
+    [data-testid="stFileUploader"] svg,
+    [data-testid="stFileUploader"] svg * {
+        color: #A5B4FC !important;
+        fill: #A5B4FC !important;
+        stroke: #A5B4FC !important;
+    }
+
+    [data-testid="stFileUploader"] *,
+    [data-testid="stFileUploaderDropzone"] *,
+    [data-testid="stFileUploaderDropzoneInstructions"],
+    [data-testid="stFileUploaderDropzoneInstructions"] *,
+    [data-testid="stFileUploaderFile"] *,
+    [data-testid="stFileUploaderFileData"] *,
+    [data-testid="stFileUploaderFileName"] * {
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+    }
+
+    [data-testid="stFileUploaderFile"],
+    [data-testid="stFileUploaderFile"] > div,
+    [data-testid="stFileUploaderFileData"] {
+        background: #1E293B !important;
+        background-color: #1E293B !important;
+        border-color: #334155 !important;
+    }
+
+    [data-testid="stFileUploaderFile"] {
+        border: 1px solid #334155 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18) !important;
+        overflow: hidden !important;
+    }
+
+    [data-testid="stFileUploaderFile"] *,
+    [data-testid="stFileUploaderFileData"] *,
+    [data-testid="stFileUploaderFileName"],
+    [data-testid="stFileUploaderFileName"] * {
+        background: transparent !important;
+        background-color: transparent !important;
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+    }
+
+    [data-testid="stFileUploaderFile"] small,
+    [data-testid="stFileUploaderFile"] [data-testid*="FileSize"],
+    [data-testid="stFileUploaderFile"] [class*="fileSize"] {
+        color: #AAB7CF !important;
+        -webkit-text-fill-color: #AAB7CF !important;
+    }
+
+    [data-testid="stFileUploaderFile"] button {
+        background: #334155 !important;
+        border: 1px solid #64748B !important;
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+    }
+
+    [data-testid="stWidgetLabel"],
+    [data-testid="stWidgetLabel"] > div,
+    [data-testid="stWidgetLabel"] label,
+    [data-testid="stWidgetLabel"] span,
+    [data-testid="stMetricLabel"],
+    [data-testid="stMetricLabel"] * {
+        color: #CBD5E1 !important;
+        -webkit-text-fill-color: #CBD5E1 !important;
+        opacity: 1 !important;
+    }
+
+    [data-testid="stWidgetLabel"] [data-testid="stTooltipIcon"],
+    [data-testid="stWidgetLabel"] [data-testid="stTooltipHoverTarget"],
+    [data-testid="stWidgetLabel"] button[aria-label*="help" i],
+    [data-testid="stWidgetLabel"] button[aria-label*="Help" i],
+    [data-testid="stMetricLabel"] [data-testid="stTooltipIcon"],
+    [data-testid="stMetricLabel"] [data-testid="stTooltipHoverTarget"],
+    [data-testid="stMetricLabel"] button[aria-label*="help" i],
+    [data-testid="stMetricLabel"] button[aria-label*="Help" i] {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: auto !important;
+        height: auto !important;
+        min-width: 16px !important;
+        min-height: 16px !important;
+        margin-left: 6px !important;
+        border-radius: 999px !important;
+        background: transparent !important;
+        border: 0 !important;
+        color: #CBD5E1 !important;
+        -webkit-text-fill-color: #CBD5E1 !important;
+        box-shadow: none !important;
+        opacity: 1 !important;
+    }
+
+    [data-testid="stWidgetLabel"] [data-testid="stTooltipIcon"] svg,
+    [data-testid="stWidgetLabel"] [data-testid="stTooltipIcon"] svg *,
+    [data-testid="stWidgetLabel"] [data-testid="stTooltipHoverTarget"] svg,
+    [data-testid="stWidgetLabel"] [data-testid="stTooltipHoverTarget"] svg *,
+    [data-testid="stWidgetLabel"] button[aria-label*="help" i] svg,
+    [data-testid="stWidgetLabel"] button[aria-label*="help" i] svg *,
+    [data-testid="stWidgetLabel"] button[aria-label*="Help" i] svg,
+    [data-testid="stWidgetLabel"] button[aria-label*="Help" i] svg *,
+    [data-testid="stMetricLabel"] [data-testid="stTooltipIcon"] svg,
+    [data-testid="stMetricLabel"] [data-testid="stTooltipIcon"] svg *,
+    [data-testid="stMetricLabel"] [data-testid="stTooltipHoverTarget"] svg,
+    [data-testid="stMetricLabel"] [data-testid="stTooltipHoverTarget"] svg *,
+    [data-testid="stMetricLabel"] button[aria-label*="help" i] svg,
+    [data-testid="stMetricLabel"] button[aria-label*="help" i] svg *,
+    [data-testid="stMetricLabel"] button[aria-label*="Help" i] svg,
+    [data-testid="stMetricLabel"] button[aria-label*="Help" i] svg * {
+        color: #E5E7EB !important;
+        fill: #E5E7EB !important;
+        stroke: #E5E7EB !important;
+        opacity: 1 !important;
+    }
+
+    button[aria-label^="Help for"] {
+        position: relative !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 20px !important;
+        height: 20px !important;
+        min-width: 20px !important;
+        min-height: 20px !important;
+        margin-left: 6px !important;
+        padding: 0 !important;
+        border-radius: 999px !important;
+        background: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        color: transparent !important;
+        -webkit-text-fill-color: transparent !important;
+        opacity: 1 !important;
+        overflow: visible !important;
+    }
+
+    button[aria-label^="Help for"] * {
+        display: none !important;
+    }
+
+    button[aria-label^="Help for"]::before {
+        content: "";
+        position: absolute;
+        inset: 1px;
+        border-radius: 999px;
+        background: #F8FAFC !important;
+        border: 1px solid rgba(15, 23, 42, 0.24) !important;
+        box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.18) !important;
+    }
+
+    button[aria-label^="Help for"]::after {
+        content: "?";
+        position: absolute;
+        inset: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #0F172A !important;
+        -webkit-text-fill-color: #0F172A !important;
+        font-size: 0.74rem;
+        font-weight: 900;
+        line-height: 1;
+    }
+
+    button[aria-label^="Help for"]:hover::before {
+        background: #FFFFFF !important;
+        border-color: rgba(15, 23, 42, 0.36) !important;
+    }
+
+    [role="tooltip"],
+    [role="tooltip"] *,
+    [data-baseweb="tooltip"],
+    [data-baseweb="tooltip"] *,
+    [data-testid="stTooltipContent"],
+    [data-testid="stTooltipContent"] *,
+    div[data-baseweb="popover"][role="tooltip"],
+    div[data-baseweb="popover"][role="tooltip"] * {
+        background: #0F172A !important;
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+        border-color: #334155 !important;
+        opacity: 1 !important;
+    }
+
+    [role="tooltip"],
+    [data-baseweb="tooltip"],
+    [data-testid="stTooltipContent"] {
+        border: 1px solid #334155 !important;
+        border-radius: 10px !important;
+        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.36) !important;
+    }
+
+    [data-testid="stAlert"],
+    [data-testid="stAlert"] * {
+        background: #10231D !important;
+        border-color: #10B981 !important;
+        color: #D1FAE5 !important;
+        -webkit-text-fill-color: #D1FAE5 !important;
+    }
+
+    [data-testid="stAlert"] {
+        border: 1px solid #10B981 !important;
+        border-radius: 14px !important;
+        box-shadow: 0 16px 32px rgba(0, 0, 0, 0.32) !important;
+    }
+
+    .step-connector {
+        background: #334155 !important;
+    }
+
+    .step-circle.pending {
+        background: #1E293B !important;
+        border-color: #334155 !important;
+        color: #CBD5E1 !important;
+    }
+
+    .step-label {
+        color: #94A3B8 !important;
+    }
+
+    div[data-testid="stSidebar"] .sidebar-caption,
+    div[data-testid="stSidebar"] .sidebar-stage-status {
+        color: #AAB7CF !important;
+    }
+
+    div[data-testid="stSidebar"] .sidebar-stage-label,
+    div[data-testid="stSidebar"] .sidebar-title {
+        color: #E5E7EB !important;
+    }
+
+    div[data-testid="stSidebar"] .sidebar-stage-index {
+        background: #1E293B !important;
+        color: #C4B5FD !important;
+    }
+
+    div[data-testid="stSidebar"] .sidebar-stage-card.ready .sidebar-stage-index {
+        background: rgba(16,185,129,0.18) !important;
+        color: #6EE7B7 !important;
+    }
+
+    div[data-testid="stSidebar"] .sidebar-stage-card.active .sidebar-stage-index {
+        background: var(--accent-shap) !important;
+        color: #FFFFFF !important;
+    }
+
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapsedControl"],
+    button[aria-label*="sidebar" i],
+    button[title*="sidebar" i] {
+        background: #111827 !important;
+        border: 1px solid #334155 !important;
+        border-radius: 10px !important;
+        color: #CBD5E1 !important;
+        -webkit-text-fill-color: #CBD5E1 !important;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.20) !important;
+        opacity: 1 !important;
+    }
+
+    [data-testid="collapsedControl"] svg,
+    [data-testid="collapsedControl"] svg *,
+    [data-testid="stSidebarCollapsedControl"] svg,
+    [data-testid="stSidebarCollapsedControl"] svg *,
+    button[aria-label*="sidebar" i] svg,
+    button[aria-label*="sidebar" i] svg *,
+    button[title*="sidebar" i] svg,
+    button[title*="sidebar" i] svg * {
+        color: #CBD5E1 !important;
+        fill: #CBD5E1 !important;
+        stroke: #CBD5E1 !important;
+        opacity: 1 !important;
+    }
+
+    .stSelectbox div[data-baseweb="select"],
+    .stMultiSelect div[data-baseweb="select"],
+    .stSelectbox div[data-baseweb="select"] > div,
+    .stMultiSelect div[data-baseweb="select"] > div,
+    div[data-baseweb="menu"],
+    div[data-baseweb="popover"]:has([role="listbox"]),
+    div[data-baseweb="popover"] > div:has([role="listbox"]),
+    .stMultiSelect div[data-baseweb="tag"],
+    .stTextInput input,
+    textarea,
+    div[role="listbox"],
+    ul[role="listbox"] {
+        background: #111827 !important;
+        border-color: #334155 !important;
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+    }
+
+    div[data-baseweb="popover"]:has([role="listbox"]),
+    div[data-baseweb="popover"]:has([role="listbox"]) > div,
+    div[data-baseweb="popover"]:has([role="listbox"]) div:not([role="option"]),
+    div[data-baseweb="popover"]:has([role="listbox"]) ul,
+    div[data-baseweb="popover"]:has([role="listbox"]) li,
+    div[role="listbox"],
+    div[role="listbox"] > div,
+    ul[role="listbox"],
+    ul[role="listbox"] > li {
+        background: #111827 !important;
+        background-color: #111827 !important;
+        border-color: #334155 !important;
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+    }
+
+    .stSelectbox div[data-baseweb="select"] input,
+    .stSelectbox div[data-baseweb="select"] textarea,
+    .stSelectbox div[data-baseweb="select"] span,
+    .stMultiSelect div[data-baseweb="select"] input,
+    .stMultiSelect div[data-baseweb="select"] textarea,
+    .stMultiSelect div[data-baseweb="select"] span,
+    .stTextInput input,
+    textarea {
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+    }
+
+    .stSelectbox div[data-baseweb="select"] [class*="singleValue"],
+    .stSelectbox div[data-baseweb="select"] [class*="valueContainer"],
+    .stSelectbox div[data-baseweb="select"] [class*="placeholder"],
+    .stMultiSelect div[data-baseweb="select"] [class*="valueContainer"],
+    .stMultiSelect div[data-baseweb="select"] [class*="placeholder"] {
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+        opacity: 1 !important;
+    }
+
+    .stSelectbox div[data-baseweb="select"] svg,
+    .stSelectbox div[data-baseweb="select"] svg *,
+    .stMultiSelect div[data-baseweb="select"] svg,
+    .stMultiSelect div[data-baseweb="select"] svg * {
+        color: #E5E7EB !important;
+        fill: #E5E7EB !important;
+        stroke: #E5E7EB !important;
+        opacity: 1 !important;
+    }
+
+    div[role="option"],
+    li[role="option"] {
+        background: #111827 !important;
+        background-color: #111827 !important;
+        border: 0 !important;
+        border-bottom: 1px solid #243247 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+        min-height: 42px !important;
+        height: auto !important;
+        width: auto !important;
+        padding: 0.56rem 0.75rem !important;
+    }
+
+    div[role="option"] *,
+    li[role="option"] * {
+        background: transparent !important;
+        background-color: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        color: #E5E7EB !important;
+        -webkit-text-fill-color: #E5E7EB !important;
+    }
+
+    .stMultiSelect [data-baseweb="tag"] {
+        background: #312E81 !important;
+        border: 1px solid #4F46E5 !important;
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
+    }
+
+    .stMultiSelect [data-baseweb="tag"] * {
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
+        fill: #FFFFFF !important;
+        stroke: #FFFFFF !important;
+    }
+
+    div[role="option"]:hover,
+    li[role="option"]:hover,
+    div[role="option"][data-highlighted],
+    li[role="option"][data-highlighted],
+    div[role="option"][aria-selected="true"],
+    li[role="option"][aria-selected="true"],
+    div[role="option"][aria-selected="true"] div,
+    li[role="option"][aria-selected="true"] div,
+    div[role="option"][aria-selected="true"] span,
+    li[role="option"][aria-selected="true"] span,
+    div[role="option"][aria-selected="true"] *,
+    li[role="option"][aria-selected="true"] * {
+        background: #312E81 !important;
+        background-color: #312E81 !important;
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
+    }
+
+    div[data-baseweb="select"] input::placeholder,
+    .stTextInput input::placeholder,
+    textarea::placeholder {
+        color: #94A3B8 !important;
+        -webkit-text-fill-color: #94A3B8 !important;
+    }
+""" if dark_mode else ""
+
+workflow_anchor_css = """
+    .stApp.sidebar-scroll-sync .sidebar-stage-card.active:not(.scroll-active) {
+        background: var(--card-bg) !important;
+        border-color: var(--card-border) !important;
+        border-left-color: #CBD5E1 !important;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06) !important;
+    }
+
+    .stApp.sidebar-scroll-sync .sidebar-stage-card.active.available:not(.scroll-active) {
+        border-left-color: var(--accent-preprocessing) !important;
+    }
+
+    .stApp.sidebar-scroll-sync .sidebar-stage-card.active:not(.scroll-active) .sidebar-stage-index {
+        background: #EEF2FF !important;
+        color: #4338CA !important;
+    }
+
+    .stApp.sidebar-scroll-sync .sidebar-stage-card.active.available:not(.scroll-active) .sidebar-stage-index {
+        background: #D1FAE5 !important;
+        color: #047857 !important;
+    }
+
+    .stApp.sidebar-scroll-sync .sidebar-stage-card.active:not(.scroll-active) .sidebar-stage-status {
+        font-size: 0 !important;
+    }
+
+    .stApp.sidebar-scroll-sync .sidebar-stage-card.active:not(.scroll-active) .sidebar-stage-status::after {
+        content: "Ready";
+        font-size: 0.68rem;
+    }
+
+    .stApp.sidebar-scroll-sync .sidebar-stage-card.scroll-active {
+        background: linear-gradient(135deg, rgba(139,92,246,0.22), rgba(59,130,246,0.14)) !important;
+        border-color: var(--card-border) !important;
+        border-left-color: var(--accent-shap) !important;
+        opacity: 1 !important;
+        box-shadow: 0 12px 24px rgba(79, 70, 229, 0.18) !important;
+    }
+
+    .stApp.sidebar-scroll-sync .sidebar-stage-card.scroll-active .sidebar-stage-index {
+        background: var(--accent-shap) !important;
+        color: #FFFFFF !important;
+    }
+
+    .stApp.sidebar-scroll-sync .sidebar-stage-card.scroll-active .sidebar-stage-status {
+        font-size: 0 !important;
+    }
+
+    .stApp.sidebar-scroll-sync .sidebar-stage-card.scroll-active .sidebar-stage-status::after {
+        content: "Active";
+        font-size: 0.68rem;
+    }
+
+    .stApp:has(#dataset-preview:target) .sidebar-stage-card.active,
+    .stApp:has(#preprocessing-options:target) .sidebar-stage-card.active,
+    .stApp:has(#model-training:target) .sidebar-stage-card.active,
+    .stApp:has(#shap-explainability:target) .sidebar-stage-card.active,
+    .stApp:has(#download-report:target) .sidebar-stage-card.active {
+        background: var(--card-bg) !important;
+        border-color: var(--card-border) !important;
+        border-left-color: #CBD5E1 !important;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06) !important;
+    }
+
+    .stApp:has(#dataset-preview:target) .sidebar-stage-card.active.available,
+    .stApp:has(#preprocessing-options:target) .sidebar-stage-card.active.available,
+    .stApp:has(#model-training:target) .sidebar-stage-card.active.available,
+    .stApp:has(#shap-explainability:target) .sidebar-stage-card.active.available,
+    .stApp:has(#download-report:target) .sidebar-stage-card.active.available {
+        border-left-color: var(--accent-preprocessing) !important;
+    }
+
+    .stApp:has(#dataset-preview:target) .sidebar-stage-card.active .sidebar-stage-index,
+    .stApp:has(#preprocessing-options:target) .sidebar-stage-card.active .sidebar-stage-index,
+    .stApp:has(#model-training:target) .sidebar-stage-card.active .sidebar-stage-index,
+    .stApp:has(#shap-explainability:target) .sidebar-stage-card.active .sidebar-stage-index,
+    .stApp:has(#download-report:target) .sidebar-stage-card.active .sidebar-stage-index {
+        background: #EEF2FF !important;
+        color: #4338CA !important;
+    }
+
+    .stApp:has(#dataset-preview:target) .sidebar-stage-card.active.available .sidebar-stage-index,
+    .stApp:has(#preprocessing-options:target) .sidebar-stage-card.active.available .sidebar-stage-index,
+    .stApp:has(#model-training:target) .sidebar-stage-card.active.available .sidebar-stage-index,
+    .stApp:has(#shap-explainability:target) .sidebar-stage-card.active.available .sidebar-stage-index,
+    .stApp:has(#download-report:target) .sidebar-stage-card.active.available .sidebar-stage-index {
+        background: #D1FAE5 !important;
+        color: #047857 !important;
+    }
+
+    .stApp:has(#dataset-preview:target) .sidebar-stage-card.active.available .sidebar-stage-status,
+    .stApp:has(#preprocessing-options:target) .sidebar-stage-card.active.available .sidebar-stage-status,
+    .stApp:has(#model-training:target) .sidebar-stage-card.active.available .sidebar-stage-status,
+    .stApp:has(#shap-explainability:target) .sidebar-stage-card.active.available .sidebar-stage-status,
+    .stApp:has(#download-report:target) .sidebar-stage-card.active.available .sidebar-stage-status {
+        font-size: 0 !important;
+    }
+
+    .stApp:has(#dataset-preview:target) .sidebar-stage-card.active.available .sidebar-stage-status::after,
+    .stApp:has(#preprocessing-options:target) .sidebar-stage-card.active.available .sidebar-stage-status::after,
+    .stApp:has(#model-training:target) .sidebar-stage-card.active.available .sidebar-stage-status::after,
+    .stApp:has(#shap-explainability:target) .sidebar-stage-card.active.available .sidebar-stage-status::after,
+    .stApp:has(#download-report:target) .sidebar-stage-card.active.available .sidebar-stage-status::after {
+        content: "Ready";
+        font-size: 0.68rem;
+    }
+
+    .stApp:has(#dataset-preview:target) .sidebar-stage-card[href="#dataset-preview"],
+    .stApp:has(#preprocessing-options:target) .sidebar-stage-card[href="#preprocessing-options"],
+    .stApp:has(#model-training:target) .sidebar-stage-card[href="#model-training"],
+    .stApp:has(#shap-explainability:target) .sidebar-stage-card[href="#shap-explainability"],
+    .stApp:has(#download-report:target) .sidebar-stage-card[href="#download-report"] {
+        background: linear-gradient(135deg, rgba(139,92,246,0.22), rgba(59,130,246,0.14)) !important;
+        border-color: var(--card-border) !important;
+        border-left-color: var(--accent-shap) !important;
+        opacity: 1 !important;
+        box-shadow: 0 12px 24px rgba(79, 70, 229, 0.18) !important;
+    }
+
+    .stApp:has(#dataset-preview:target) .sidebar-stage-card[href="#dataset-preview"] .sidebar-stage-index,
+    .stApp:has(#preprocessing-options:target) .sidebar-stage-card[href="#preprocessing-options"] .sidebar-stage-index,
+    .stApp:has(#model-training:target) .sidebar-stage-card[href="#model-training"] .sidebar-stage-index,
+    .stApp:has(#shap-explainability:target) .sidebar-stage-card[href="#shap-explainability"] .sidebar-stage-index,
+    .stApp:has(#download-report:target) .sidebar-stage-card[href="#download-report"] .sidebar-stage-index {
+        background: var(--accent-shap) !important;
+        color: #FFFFFF !important;
+    }
+
+    .stApp:has(#dataset-preview:target) .sidebar-stage-card[href="#dataset-preview"] .sidebar-stage-status,
+    .stApp:has(#preprocessing-options:target) .sidebar-stage-card[href="#preprocessing-options"] .sidebar-stage-status,
+    .stApp:has(#model-training:target) .sidebar-stage-card[href="#model-training"] .sidebar-stage-status,
+    .stApp:has(#shap-explainability:target) .sidebar-stage-card[href="#shap-explainability"] .sidebar-stage-status,
+    .stApp:has(#download-report:target) .sidebar-stage-card[href="#download-report"] .sidebar-stage-status {
+        font-size: 0 !important;
+    }
+
+    .stApp:has(#dataset-preview:target) .sidebar-stage-card[href="#dataset-preview"] .sidebar-stage-status::after,
+    .stApp:has(#preprocessing-options:target) .sidebar-stage-card[href="#preprocessing-options"] .sidebar-stage-status::after,
+    .stApp:has(#model-training:target) .sidebar-stage-card[href="#model-training"] .sidebar-stage-status::after,
+    .stApp:has(#shap-explainability:target) .sidebar-stage-card[href="#shap-explainability"] .sidebar-stage-status::after,
+    .stApp:has(#download-report:target) .sidebar-stage-card[href="#download-report"] .sidebar-stage-status::after {
+        content: "Active";
+        font-size: 0.68rem;
+    }
+"""
+
 st.markdown("""
 <style>
     :root {
@@ -61,6 +934,10 @@ st.markdown("""
         --primary: #4F46E5;
         --primary-dark: #4338CA;
         --accent: #0EA5E9;
+        --accent-model: #3B82F6;
+        --accent-shap: #8B5CF6;
+        --accent-preprocessing: #10B981;
+        --accent-warning: #F59E0B;
         --success: #10B981;
     }
 
@@ -70,6 +947,122 @@ st.markdown("""
             radial-gradient(circle at top left, rgba(14,165,233,0.08), transparent 22%),
             linear-gradient(180deg, #FAFBFE 0%, #F3F6FB 100%);
         color: var(--text-main);
+    }
+
+    div[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #F8FAFC 0%, #EEF2FF 100%);
+        border-right: 1px solid var(--card-border);
+    }
+
+    div[data-testid="stSidebar"] section {
+        padding-top: 1.1rem;
+    }
+
+    .sidebar-shell {
+        background: linear-gradient(180deg, var(--card-bg) 0%, var(--bg-soft) 100%);
+        border: 1px solid var(--card-border);
+        border-radius: 18px;
+        padding: 14px;
+        margin: 12px 0 16px 0;
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.10);
+    }
+
+    .sidebar-title {
+        font-size: 0.9rem;
+        font-weight: 850;
+        color: var(--text-main);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+    }
+
+    .sidebar-caption {
+        font-size: 0.82rem;
+        color: var(--text-soft);
+        line-height: 1.45;
+        margin-bottom: 12px;
+    }
+
+    .sidebar-stage-card {
+        display: block;
+        background: rgba(255,255,255,0.72);
+        border: 1px solid var(--card-border);
+        border-left: 4px solid #CBD5E1;
+        border-radius: 14px;
+        padding: 10px 10px 9px 10px;
+        margin-bottom: 9px;
+        text-decoration: none !important;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+        transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .sidebar-stage-card:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 24px rgba(15, 23, 42, 0.10);
+    }
+
+    .sidebar-stage-card.active {
+        border-left-color: var(--accent-shap);
+        background: linear-gradient(135deg, rgba(139,92,246,0.14), rgba(59,130,246,0.10));
+    }
+
+    .sidebar-stage-card.ready {
+        border-left-color: var(--accent-preprocessing);
+    }
+
+    .sidebar-stage-card.locked {
+        opacity: 0.66;
+    }
+
+    .sidebar-stage-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .sidebar-stage-label {
+        color: var(--text-main);
+        font-size: 0.9rem;
+        font-weight: 800;
+        line-height: 1.2;
+    }
+
+    .sidebar-stage-status {
+        color: var(--text-soft);
+        font-size: 0.68rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+
+    .sidebar-stage-index {
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        background: #EEF2FF;
+        color: #4338CA;
+        font-size: 0.74rem;
+        font-weight: 900;
+    }
+
+    .sidebar-stage-card.ready .sidebar-stage-index {
+        background: #D1FAE5;
+        color: #047857;
+    }
+
+    .sidebar-stage-card.active .sidebar-stage-index {
+        background: var(--accent-shap);
+        color: white;
+    }
+
+    .sidebar-stage-card.locked .sidebar-stage-index {
+        background: #E2E8F0;
+        color: #64748B;
     }
 
     .main .block-container {
@@ -337,9 +1330,22 @@ st.markdown("""
     .summary-card {
         background: linear-gradient(180deg, #FFFFFF 0%, #F8FBFF 100%);
         border: 1px solid #DCE6F2;
+        border-top: 4px solid var(--card-accent, var(--accent-model));
         border-radius: 18px;
         padding: 16px 16px 14px 16px;
         box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+    }
+
+    .summary-card-link {
+        display: block;
+        text-decoration: none !important;
+        transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+    }
+
+    .summary-card-link:hover {
+        transform: translateY(-2px);
+        border-color: var(--card-accent, var(--accent-model));
+        box-shadow: 0 14px 28px rgba(15, 23, 42, 0.09);
     }
 
     .summary-label {
@@ -363,6 +1369,21 @@ st.markdown("""
         color: #475569;
         font-size: 0.92rem;
         line-height: 1.6;
+    }
+
+    @media (max-width: 760px) {
+        div[data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap;
+        }
+
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+            min-width: 100% !important;
+            flex: 1 1 100% !important;
+        }
+
+        .summary-grid {
+            grid-template-columns: 1fr;
+        }
     }
 
     .story-panel {
@@ -518,6 +1539,8 @@ st.markdown("""
         color: #0F172A !important;
         font-weight: 500;
     }
+
+""" + dark_theme_css + workflow_anchor_css + """
 </style>
 """, unsafe_allow_html=True)
 
@@ -673,17 +1696,138 @@ def show_stage_sidebar(completed_steps: int):
         ("Report", "Download Report", "download-report", completed_steps >= 4),
     ]
 
-    st.sidebar.markdown("### Workflow")
-    st.sidebar.caption("Use the links to jump between available analysis stages.")
+    html_parts = [
+        '<div class="sidebar-shell">',
+        '<div class="sidebar-title">Workflow</div>',
+        '<div class="sidebar-caption">Jump between available analysis stages.</div>',
+    ]
 
     for idx, (_, label, anchor, available) in enumerate(stages, 1):
         is_active = (completed_steps + 1 == idx and completed_steps < 4) or (completed_steps >= 4 and idx == 4)
         status = "Active" if is_active else ("Ready" if available else "Locked")
-        marker = "●" if is_active else ("✓" if available else "○")
-        if available or idx <= completed_steps + 1:
-            st.sidebar.markdown(f"{marker} [{label}](#{anchor})  \n`{status}`")
-        else:
-            st.sidebar.markdown(f"{marker} {label}  \n`{status}`")
+        state_class = "active" if is_active else ("ready" if available else "locked")
+        if available:
+            state_class += " available"
+        tag = "a" if available or idx <= completed_steps + 1 else "div"
+        href_attr = f' href="#{html_lib.escape(anchor)}"' if tag == "a" else ""
+        stage_index = "✓" if available and not is_active else str(idx)
+        html_parts.append(
+            f'<{tag} class="sidebar-stage-card {state_class}"{href_attr}>'
+            f'  <div class="sidebar-stage-row">'
+            f'    <span class="sidebar-stage-index">{html_lib.escape(stage_index)}</span>'
+            f'    <span class="sidebar-stage-label">{html_lib.escape(label)}</span>'
+            f'  </div>'
+            f'  <div class="sidebar-stage-status">{html_lib.escape(status)}</div>'
+            f'</{tag}>'
+        )
+
+    html_parts.append("</div>")
+    st.sidebar.markdown("".join(html_parts), unsafe_allow_html=True)
+
+
+def install_sidebar_scroll_sync():
+    components.html(
+        """
+        <script>
+        (() => {
+            const anchors = [
+                "dataset-preview",
+                "preprocessing-options",
+                "model-training",
+                "shap-explainability",
+                "download-report"
+            ];
+
+            const getDoc = () => window.parent.document;
+            const getWindow = () => window.parent;
+
+            function visibleAnchor(doc) {
+                let current = null;
+                let bestTop = -Infinity;
+                const activationLine = 150;
+
+                anchors.forEach((id) => {
+                    const element = doc.getElementById(id);
+                    if (!element) {
+                        return;
+                    }
+                    const top = element.getBoundingClientRect().top;
+                    if (top <= activationLine && top > bestTop) {
+                        current = id;
+                        bestTop = top;
+                    }
+                });
+
+                if (current) {
+                    return current;
+                }
+
+                let nearest = null;
+                let nearestTop = Infinity;
+                anchors.forEach((id) => {
+                    const element = doc.getElementById(id);
+                    if (!element) {
+                        return;
+                    }
+                    const top = element.getBoundingClientRect().top;
+                    if (top >= 0 && top < nearestTop) {
+                        nearest = id;
+                        nearestTop = top;
+                    }
+                });
+
+                if (nearest) {
+                    return nearest;
+                }
+
+                const hash = getWindow().location.hash.replace("#", "");
+                if (anchors.includes(hash) && doc.getElementById(hash)) {
+                    return hash;
+                }
+                return null;
+            }
+
+            function syncSidebar() {
+                const doc = getDoc();
+                const app = doc.querySelector(".stApp");
+                if (!app) {
+                    return;
+                }
+
+                const activeAnchor = visibleAnchor(doc);
+                const cards = doc.querySelectorAll(".sidebar-stage-card[href]");
+                cards.forEach((card) => {
+                    card.classList.toggle(
+                        "scroll-active",
+                        Boolean(activeAnchor) && card.getAttribute("href") === `#${activeAnchor}`
+                    );
+                });
+                app.classList.toggle("sidebar-scroll-sync", Boolean(activeAnchor));
+            }
+
+            let ticking = false;
+            function requestSync() {
+                if (ticking) {
+                    return;
+                }
+                ticking = true;
+                getWindow().requestAnimationFrame(() => {
+                    ticking = false;
+                    syncSidebar();
+                });
+            }
+
+            getWindow().addEventListener("scroll", requestSync, { passive: true });
+            getWindow().addEventListener("hashchange", requestSync);
+            getWindow().addEventListener("resize", requestSync);
+            setInterval(syncSidebar, 800);
+            syncSidebar();
+        })();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
 
 def show_section_divider():
@@ -722,25 +1866,170 @@ def show_story_panel(title, text):
     )
 
 
+def show_compact_success(message):
+    if st.session_state.get("dark_mode"):
+        st.markdown(
+            f'<div class="compact-status">{html_lib.escape(str(message))}</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.success(message)
+
+
 def show_summary_cards(cards):
-    html = ['<div class="summary-grid">']
+    html_parts = ['<div class="summary-grid">']
     for card in cards:
-        label = str(card.get("label", ""))
-        value = str(card.get("value", ""))
-        note = str(card.get("note", ""))
-        html.append(
-            f'<div class="summary-card">'
+        label = html_lib.escape(str(card.get("label", "")))
+        value = html_lib.escape(str(card.get("value", "")))
+        note = html_lib.escape(str(card.get("note", "")))
+        href = str(card.get("href", "")).strip()
+        accent = html_lib.escape(str(card.get("accent", "#3B82F6")))
+        tag = "a" if href else "div"
+        href_attr = f' href="{html_lib.escape(href)}"' if href else ""
+        link_class = " summary-card-link" if href else ""
+        html_parts.append(
+            f'<{tag} class="summary-card{link_class}"{href_attr} style="--card-accent: {accent};">'
             f'<div class="summary-label">{label}</div>'
             f'<div class="summary-value">{value}</div>'
             f'<div class="summary-note">{note}</div>'
-            f'</div>'
+            f'</{tag}>'
         )
-    html.append("</div>")
-    st.markdown("".join(html), unsafe_allow_html=True)
+    html_parts.append("</div>")
+    st.markdown("".join(html_parts), unsafe_allow_html=True)
 
 
 def show_chart_frame(fig, use_container_width=True):
+    if st.session_state.get("dark_mode"):
+        apply_dark_figure_theme(fig)
     st.pyplot(fig, use_container_width=use_container_width)
+
+
+def apply_dark_figure_theme(fig):
+    if fig is None:
+        return None
+
+    fig.patch.set_facecolor("#111827")
+    for ax in fig.axes:
+        ax.set_facecolor("#162033")
+        ax.title.set_color("#E5E7EB")
+        ax.xaxis.label.set_color("#CBD5E1")
+        ax.yaxis.label.set_color("#CBD5E1")
+        ax.tick_params(axis="x", colors="#CBD5E1")
+        ax.tick_params(axis="y", colors="#CBD5E1")
+
+        for spine in ax.spines.values():
+            spine.set_color("#334155")
+
+        for text in ax.texts:
+            if text.get_gid() == "confusion-cell-annotation":
+                continue
+            if text.get_color() not in ["white", "#FFFFFF", "#ffffff"]:
+                text.set_color("#E5E7EB")
+
+        for label in list(ax.get_xticklabels()) + list(ax.get_yticklabels()):
+            label.set_color("#CBD5E1")
+
+        legend = ax.get_legend()
+        if legend is not None:
+            legend.get_frame().set_facecolor("#111827")
+            legend.get_frame().set_edgecolor("#334155")
+            for text in legend.get_texts():
+                text.set_color("#E5E7EB")
+
+    try:
+        fig.tight_layout()
+    except Exception:
+        pass
+    return fig
+
+
+def apply_dark_dataframe_style(data):
+    if not st.session_state.get("dark_mode"):
+        return data
+
+    table_styles = [
+        {
+            "selector": "thead th",
+            "props": [
+                ("background-color", "#111827"),
+                ("color", "#E5E7EB"),
+                ("border-color", "#334155"),
+                ("font-weight", "700"),
+            ],
+        },
+        {
+            "selector": "tbody th",
+            "props": [
+                ("background-color", "#111827"),
+                ("color", "#CBD5E1"),
+                ("border-color", "#263449"),
+            ],
+        },
+        {
+            "selector": "td",
+            "props": [
+                ("background-color", "#162033"),
+                ("color", "#E5E7EB"),
+                ("border-color", "#263449"),
+            ],
+        },
+        {
+            "selector": "tbody tr:nth-child(even) td",
+            "props": [("background-color", "#111827")],
+        },
+        {
+            "selector": "tbody tr:hover td",
+            "props": [("background-color", "#1E293B")],
+        },
+    ]
+
+    try:
+        if isinstance(data, pd.DataFrame):
+            return (
+                data.style
+                .set_table_styles(table_styles)
+                .set_properties(**{
+                    "background-color": "#162033",
+                    "color": "#E5E7EB",
+                    "border-color": "#263449",
+                })
+            )
+        if hasattr(data, "set_table_styles"):
+            return data.set_table_styles(table_styles, overwrite=False)
+    except Exception:
+        return data
+
+    return data
+
+
+def show_dataframe(data, **kwargs):
+    if st.session_state.get("dark_mode"):
+        styled_data = apply_dark_dataframe_style(data)
+        height = kwargs.get("height")
+        max_height = f"max-height: {int(height)}px;" if height else "max-height: 420px;"
+
+        try:
+            table_html = styled_data.to_html()
+        except Exception:
+            try:
+                table_html = pd.DataFrame(data).to_html(escape=True)
+            except Exception:
+                st.dataframe(data, **kwargs)
+                return
+
+        st.markdown(
+            f'<div class="dark-table-wrap" style="{max_height}">{table_html}</div>',
+            unsafe_allow_html=True
+        )
+        return
+
+    st.dataframe(data, **kwargs)
+
+
+def responsive_pair_columns(weights=None):
+    if st.session_state.get("is_mobile"):
+        return st.container(), st.container()
+    return st.columns(weights or [1, 1])
 
 
 def queue_toast(message, icon="✅"):
@@ -750,6 +2039,8 @@ def queue_toast(message, icon="✅"):
 def flush_pending_toast():
     pending = st.session_state.pop("_pending_toast", None)
     if pending and hasattr(st, "toast"):
+        if st.session_state.get("dark_mode"):
+            return
         st.toast(pending["message"], icon=pending.get("icon", "✅"))
 
 
@@ -860,6 +2151,60 @@ def get_best_model_info(results_df, problem_type):
     return best_row["Model"], metric, best_row[metric]
 
 
+def style_best_model_row(results_df, metric_name):
+    if results_df is None or results_df.empty or metric_name not in results_df.columns:
+        return results_df
+
+    best_value = results_df[metric_name].max()
+
+    def highlight_best(row):
+        if row.get(metric_name) == best_value:
+            if st.session_state.get("dark_mode"):
+                return ["background-color: #312E81; color: #FFFFFF; font-weight: 700" for _ in row]
+            return ["background-color: #EDE9FE; font-weight: 700" for _ in row]
+        return ["" for _ in row]
+
+    return results_df.style.apply(highlight_best, axis=1)
+
+
+def build_kfold_column_config(kfold_df, metric_name):
+    if kfold_df is None or kfold_df.empty:
+        return {}
+
+    mean_col = f"{metric_name} Mean"
+    std_col = f"{metric_name} Std"
+    config = {}
+
+    if mean_col in kfold_df.columns:
+        values = pd.to_numeric(kfold_df[mean_col], errors="coerce").dropna()
+        if metric_name == "Accuracy" or (not values.empty and values.between(0, 1).all()):
+            config[mean_col] = st.column_config.ProgressColumn(
+                mean_col,
+                min_value=0,
+                max_value=1,
+                format="%.4f",
+                width="medium"
+            )
+        else:
+            config[mean_col] = st.column_config.NumberColumn(
+                mean_col,
+                format="%.4f",
+                width="medium"
+            )
+
+    if std_col in kfold_df.columns:
+        config[std_col] = st.column_config.NumberColumn(
+            std_col,
+            format="%.4f",
+            width="small"
+        )
+
+    if "Model" in kfold_df.columns:
+        config["Model"] = st.column_config.TextColumn("Model", width="medium")
+
+    return config
+
+
 def get_positive_class_label(problem_type, report, y=None):
     if problem_type != "classification":
         return None
@@ -967,6 +2312,7 @@ def show_metric_plots(results_df, problem_type):
     if not available_metrics:
         return
 
+    st.markdown('<span id="metric-comparisons"></span>', unsafe_allow_html=True)
     st.subheader("Metric Comparisons")
 
     for i in range(0, len(available_metrics), 2):
@@ -983,6 +2329,52 @@ def parse_order_input(order_text):
     if not order_text:
         return []
     return [item.strip() for item in order_text.split(",") if item.strip()]
+
+
+def validate_ordinal_order_input(column_name, available_values, parsed_order):
+    if not parsed_order:
+        return []
+
+    available_lookup = {
+        str(value).strip().lower(): str(value).strip()
+        for value in available_values
+        if str(value).strip()
+    }
+    entered_normalized = [str(value).strip().lower() for value in parsed_order if str(value).strip()]
+    entered_set = set(entered_normalized)
+    errors = []
+
+    duplicated_values = sorted({
+        parsed_order[idx]
+        for idx, normalized_value in enumerate(entered_normalized)
+        if entered_normalized.count(normalized_value) > 1
+    })
+    if duplicated_values:
+        errors.append(
+            f"{column_name}: remove duplicate values: {', '.join(map(str, duplicated_values))}."
+        )
+
+    unknown_values = [
+        parsed_order[idx]
+        for idx, normalized_value in enumerate(entered_normalized)
+        if normalized_value not in available_lookup
+    ]
+    if unknown_values:
+        errors.append(
+            f"{column_name}: these values are not in the column: {', '.join(map(str, unknown_values))}."
+        )
+
+    missing_values = [
+        original_value
+        for normalized_value, original_value in available_lookup.items()
+        if normalized_value not in entered_set
+    ]
+    if missing_values:
+        errors.append(
+            f"{column_name}: include every available value: {', '.join(map(str, missing_values))}."
+        )
+
+    return errors
 
 
 def build_report_filename(dataset_filename):
@@ -1075,7 +2467,7 @@ def show_download_section(target_column, report, results_df, problem_type,
         <div class="download-card">
             <div class="download-title">Download Report</div>
             <div class="download-subtitle">
-                Export preprocessing steps, model results, summary visuals, and SHAP explanations into one polished Word report.
+                Export preprocessing steps, model results, summary visuals, and SHAP explanations into one polished Word report. Use the Download Report item in the workflow sidebar to return here quickly.
             </div>
         </div>
         """,
@@ -1112,16 +2504,24 @@ def show_download_section(target_column, report, results_df, problem_type,
             pdp_ice_note=pdp_ice_note,
             feature_detail_reports=feature_detail_reports,
         )
+        report_bytes = word_buf.getvalue()
+        st.session_state["report_ready"] = True
+        st.session_state["report_bytes"] = report_bytes
+        st.session_state["report_filename"] = report_filename
         st.download_button(
             label="Download Word Report",
-            data=word_buf,
+            data=report_bytes,
             file_name=report_filename,
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             use_container_width=True,
+            key="main_word_report_download",
         )
+        show_compact_success("Your Word report is ready.")
     except ImportError:
+        st.session_state["report_ready"] = False
         st.warning("Word export requires python-docx. Install it with: pip install python-docx")
     except Exception as e:
+        st.session_state["report_ready"] = False
         st.error(f"Word report could not be generated: {e}")
 
 
@@ -1135,6 +2535,7 @@ sync_uploaded_file_state(uploaded_file)
 flush_pending_toast()
 completed_steps = get_completed_steps()
 show_stage_sidebar(completed_steps)
+install_sidebar_scroll_sync()
 show_workflow_status(completed_steps)
 show_step_progress(completed_steps)
 
@@ -1149,7 +2550,7 @@ if uploaded_file is not None:
             index=0
         )
 
-        st.dataframe(df.head(preview_rows), use_container_width=True)
+        show_dataframe(df.head(preview_rows), use_container_width=True)
 
         col1, col2, col3 = st.columns(3)
         col1.metric("Rows", df.shape[0])
@@ -1196,6 +2597,7 @@ if uploaded_file is not None:
 
         user_selected_ordinal_columns = []
         user_defined_ordinal_mappings = {}
+        ordinal_order_errors = []
 
         if all_categorical_columns:
             with st.expander("Ordinal data information"):
@@ -1205,7 +2607,7 @@ if uploaded_file is not None:
                 )
 
                 if auto_detected_ordinal_columns:
-                    st.success("Automatically detected ordinal columns: " + ", ".join(auto_detected_ordinal_columns))
+                    show_compact_success("Automatically detected ordinal columns: " + ", ".join(auto_detected_ordinal_columns))
                 else:
                     st.info("No ordinal columns were automatically detected from the known patterns.")
 
@@ -1229,7 +2631,7 @@ if uploaded_file is not None:
                 if user_selected_ordinal_columns:
                     st.markdown("### Define category order for selected ordinal columns")
                     st.caption(
-                        "For each selected column, enter the category order from lowest to highest, separated by commas."
+                        "For each selected column, enter the category order from lowest to highest, separated by commas. Matching is case-insensitive."
                     )
 
                     for col in user_selected_ordinal_columns:
@@ -1257,7 +2659,15 @@ if uploaded_file is not None:
 
                         parsed_order = parse_order_input(order_text)
                         if parsed_order:
+                            current_errors = validate_ordinal_order_input(col, unique_values, parsed_order)
+                            ordinal_order_errors.extend(current_errors)
+                            for error_message in current_errors:
+                                st.error(error_message)
                             user_defined_ordinal_mappings[col] = parsed_order
+                        else:
+                            missing_order_message = f"{col}: enter the full category order before preprocessing."
+                            ordinal_order_errors.append(missing_order_message)
+                            st.error(missing_order_message)
 
         if feature_mode == "Select features manually" and selected_feature_columns:
             df_for_size = df[selected_feature_columns + [target_column]]
@@ -1288,11 +2698,13 @@ if uploaded_file is not None:
                 help="Uses only Variance Threshold and Pairwise Correlation for large or wide datasets."
             )
 
-        if st.button("Run Preprocessing"):
+        if st.button("Run Preprocessing", disabled=bool(ordinal_order_errors)):
             reset_training_state()
 
             if feature_mode == "Select features manually" and (selected_feature_columns is None or len(selected_feature_columns) == 0):
                 st.error("Please select at least one feature column.")
+            elif ordinal_order_errors:
+                st.error("Fix the ordinal category order before running preprocessing.")
             else:
                 with st.spinner("Preprocessing running..."):
                     X, y, report, X_explain_reference = preprocess_data(
@@ -1369,7 +2781,7 @@ if uploaded_file is not None:
                 st.warning("Processed data is empty after preprocessing. Please review the preprocessing report.")
             else:
                 st.subheader("Processed Data Review")
-                st.dataframe(X_explain_reference.head(), use_container_width=True)
+                show_dataframe(X_explain_reference.head(), use_container_width=True)
 
             with st.expander("Detailed preprocessing explanations"):
                 show_preprocessing_explanations(report)
@@ -1411,7 +2823,7 @@ if uploaded_file is not None:
 
                 st.subheader("Outlier Handling")
                 outlier_df = build_outlier_dataframe(report)
-                st.dataframe(outlier_df, use_container_width=True)
+                show_dataframe(outlier_df, use_container_width=True)
                 show_list("Columns with Capped Extreme Outliers", report.get("capped_outlier_columns", []))
 
                 if report.get("feature_reduction_applied"):
@@ -1454,7 +2866,7 @@ if uploaded_file is not None:
 
                 with corr_col1:
                     st.subheader("Strongest Relationships")
-                    st.dataframe(corr_table[["Feature", "Correlation with Target"]], use_container_width=True)
+                    show_dataframe(corr_table[["Feature", "Correlation with Target"]], use_container_width=True)
                     show_chart_note(
                         "Positive values suggest the feature tends to rise with the target, while negative values suggest the opposite direction."
                     )
@@ -1584,33 +2996,41 @@ if uploaded_file is not None:
             show_section_header("Results Dashboard", "Review model results, metric comparisons, and classification visuals.", anchor="results-dashboard")
 
             st.write(f"Detected problem type: **{problem_type.capitalize()}**")
-            st.dataframe(results_df, use_container_width=True)
-
             best_model_name, best_metric_name, best_metric_value = get_best_model_info(results_df, problem_type)
+            show_dataframe(
+                style_best_model_row(results_df, best_metric_name),
+                use_container_width=True
+            )
             model_story = get_model_recommendation_text(results_df, problem_type)
             if best_model_name is not None:
-                st.success(f"Leading model: {best_model_name} ({best_metric_name}: {best_metric_value:.4f})")
+                show_compact_success(f"Leading model: {best_model_name} ({best_metric_name}: {best_metric_value:.4f})")
 
             show_summary_cards([
                 {
                     "label": "Leading model",
                     "value": best_model_name or "-",
-                    "note": "Currently ranked first in the comparison."
+                    "note": "Currently ranked first in the comparison.",
+                    "href": "#model-ranking",
+                    "accent": "#3B82F6"
                 },
                 {
                     "label": "Primary metric",
                     "value": best_metric_name or "-",
-                    "note": f"Skor: {format_metric_value(best_metric_value)}"
+                    "note": f"Score: {format_metric_value(best_metric_value)}",
+                    "href": "#metric-comparisons",
+                    "accent": "#8B5CF6"
                 },
                 {
                     "label": "Models compared",
                     "value": str(len(results_df)),
-                    "note": "Evaluated side by side on the same dataset."
+                    "note": "Evaluated side by side on the same dataset.",
+                    "accent": "#10B981"
                 },
                 {
                     "label": "Decision focus",
                     "value": get_metric_focus_label(problem_type),
-                    "note": "Frames the result in plain business-facing language."
+                    "note": "Frames the result in plain business-facing language.",
+                    "accent": "#F59E0B"
                 }
             ])
             show_story_panel("Executive Summary", model_story)
@@ -1619,6 +3039,7 @@ if uploaded_file is not None:
             st.session_state["model_leaderboard_fig"] = leaderboard_fig
             st.session_state["model_recommendation_text"] = model_story
             if leaderboard_fig is not None:
+                st.markdown('<span id="model-ranking"></span>', unsafe_allow_html=True)
                 st.subheader("Model Ranking")
                 show_chart_frame(leaderboard_fig, use_container_width=False)
                 show_chart_note(
@@ -1722,8 +3143,10 @@ if uploaded_file is not None:
                     compact_cols = ["Model", "Folds"]
                     compact_cols.extend([f"{selected_kfold_metric} Mean", f"{selected_kfold_metric} Std"])
                     compact_cols = [col for col in compact_cols if col in kfold_df.columns]
-                    st.dataframe(
-                        kfold_df[compact_cols].round(4),
+                    compact_kfold_df = kfold_df[compact_cols].round(4)
+                    show_dataframe(
+                        compact_kfold_df,
+                        column_config=build_kfold_column_config(compact_kfold_df, selected_kfold_metric),
                         use_container_width=True,
                         height=160
                     )
@@ -1850,7 +3273,7 @@ if uploaded_file is not None:
 
                 with shap_col1:
                     st.subheader("Top Influential Features")
-                    st.dataframe(importance_df.head(8).round(4), use_container_width=True, height=260)
+                    show_dataframe(importance_df.head(8).round(4), use_container_width=True, height=260)
                     show_chart_note(
                         "Features are ranked by average absolute SHAP impact. Higher values indicate stronger overall influence on model output."
                     )
@@ -1955,7 +3378,7 @@ if uploaded_file is not None:
                                 current_pdp_ice_fig = plot_pdp_ice_figure(pdp_ice_data)
                                 current_pdp_ice_note = get_pdp_ice_interpretation(pdp_ice_data)
 
-                            chart_left, chart_right = st.columns(2)
+                            chart_left, chart_right = responsive_pair_columns([1, 1])
                             with chart_left:
                                 st.markdown("**Observed contribution**")
                                 if current_effect_fig is not None:
@@ -1975,7 +3398,7 @@ if uploaded_file is not None:
                                     "Use this chart to see how the model response changes when this feature is moved across its observed value range."
                                 )
 
-                            note_left, note_right = st.columns(2)
+                            note_left, note_right = responsive_pair_columns([1, 1])
                             with note_left:
                                 show_info_box("SHAP Effect Summary", current_effect_note)
                             with note_right:
@@ -2012,7 +3435,7 @@ if uploaded_file is not None:
                     )
                 with behavior_col2:
                     st.subheader("Behavior Summary Table")
-                    st.dataframe(behavior_df.head(6).round(4), use_container_width=True, height=240)
+                    show_dataframe(behavior_df.head(6).round(4), use_container_width=True, height=240)
                     show_chart_note(
                         "The table summarizes average impact strength and the dominant direction observed in the analysis sample."
                     )
