@@ -447,16 +447,15 @@ def get_feature_effect_interpretation(
 def get_shap_selection_guidance(problem_type, has_roc_auc=False):
     if problem_type == "classification":
         return (
-            "Start with the overall results table and choose the model that looks most trustworthy. "
+            "Start with the results table and choose the model you would be comfortable explaining to someone else. "
             "A strong starting point is usually the model that leads on Accuracy or F1 Score. "
-            "If one model is clearly ahead, it makes sense to use that one for SHAP. "
-            "If the scores are close, it can help to prefer models that feel more stable and easier to explain."
+            "If the scores are close, prefer the model that is more stable, easier to justify, or better aligned with the cost of mistakes."
         )
 
     return (
-        "Choose the regression model that looks strongest in the overall results table. "
+        "Choose the regression model that looks strongest in the results table. "
         "A high R2 Score together with lower error values is usually a good starting signal. "
-        "If several models look similar, it often helps to choose the one that seems more stable and easier to explain."
+        "If several models look similar, prefer the one that is more stable and easier to explain."
     )
 
 
@@ -466,13 +465,13 @@ def get_shap_intro_text(problem_type=None, positive_class_label=None):
         return (
             f"SHAP explains which features moved the model toward or away from {target_text}. "
             f"Positive SHAP values increase the model's support for {target_text}; negative values decrease it. "
-            "The larger the value, the stronger that feature's influence."
+            "The larger the value, the stronger that feature's influence on the model. SHAP explains model behavior, not real-world causality."
         )
 
     return (
         "SHAP explains which features influenced a model result and by how much. "
         "Positive values push the predicted value upward, while negative values pull it downward. "
-        "The larger the value, the stronger that feature's influence."
+        "The larger the value, the stronger that feature's influence on the model. SHAP explains model behavior, not real-world causality."
     )
 
 
@@ -585,7 +584,7 @@ def get_kfold_interpretation(kfold_df, problem_type, metric_name=None, current_l
         stability = "sensitive to which rows are used for training"
 
     base_text = (
-        f"K-fold validation repeats the evaluation across multiple train/test splits. "
+        f"K-fold validation repeats evaluation across multiple train/test splits, so the result is less dependent on one lucky or unlucky split. "
         f"Using {metric_name}, {best['Model']} has the strongest average result in this stability check, with variation that appears {stability}. "
         f"This does not replace the main model ranking; it shows whether performance remains consistent when the data split changes."
     )

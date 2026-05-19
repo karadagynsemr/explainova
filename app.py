@@ -2082,33 +2082,33 @@ def show_preprocessing_explanations(report):
 
     explain_preprocessing_step(
         "Duplicate rows removed",
-        "Identical rows were removed so the model would not learn the same observation multiple times."
+        "Rows that were exactly the same were removed. This helps prevent the model from giving extra weight to repeated observations."
     )
     explain_preprocessing_step(
         "Empty and problematic columns removed",
-        "Columns that were fully empty, had only one value, looked like IDs, or had too many unique categories were removed to reduce noise."
+        "Columns were removed only when they were unlikely to help prediction, such as fully empty columns, one-value columns, ID-like columns, or columns with too many unique categories."
     )
     explain_preprocessing_step(
         "Missing values handled",
-        "Numerical columns were filled with median values and categorical columns were filled with the most common value when needed."
+        "Blank cells were filled in so the model can train without failing. Numeric blanks use the median value; categorical blanks use the most common category."
     )
     explain_preprocessing_step(
         "Datetime columns transformed",
-        "Detected date/time columns were converted into useful parts such as year, month, day, and day of week."
+        "Date and time columns were converted into useful parts such as year, month, day, and weekday, because models usually learn better from these pieces than from raw date text."
     )
     explain_preprocessing_step(
         "Outliers reviewed",
-        "Outliers were detected using the IQR method. Extremely large or small values were capped when needed to reduce their impact."
+        "Very unusual numeric values were reviewed. Extreme values can dominate training, so the app caps the most extreme ones when needed."
     )
     explain_preprocessing_step(
         "Categorical columns encoded",
-        "Ordinal columns were encoded with ordered numeric values when a known order was detected or when the user explicitly defined that order. Remaining categorical columns were one-hot encoded."
+        "Text categories were converted into numbers. Ordered categories keep their order, while unordered categories are expanded into separate yes/no columns."
     )
 
     if report.get("feature_reduction_applied"):
         explain_preprocessing_step(
-            "Feature reduction for explainability",
-            "Because the dataset was large, optional feature selection was used to simplify the model while preserving real feature names. Low-variance features and highly correlated features were removed."
+            "Feature reduction",
+            "The dataset was large or wide, so optional feature reduction simplified the input columns. This keeps the model easier to train and explain while preserving meaningful feature names."
         )
 
 
@@ -2116,24 +2116,24 @@ def show_metric_explanations(problem_type, has_roc_auc=False):
     st.subheader("Metric Explanations")
 
     if problem_type == "classification":
-        st.markdown("**Accuracy** — Shows the overall share of correct predictions.")
-        st.markdown("**When it matters:** A strong starting metric when classes are fairly balanced and error types matter similarly.")
-        st.markdown("**Precision** — Shows how many predicted positive cases were actually positive.")
-        st.markdown("**When it matters:** Important when false alarms are costly.")
-        st.markdown("**Recall** — Shows how many real positive cases the model successfully found.")
-        st.markdown("**When it matters:** Important when missing a true positive is costly.")
-        st.markdown("**F1 Score** — Summarizes the balance between precision and recall in one value.")
-        st.markdown("**When it matters:** Useful when both false positives and false negatives matter.")
+        st.markdown("**Accuracy** - The share of predictions that were correct overall.")
+        st.markdown("**Use it when:** the classes are reasonably balanced and all mistake types have similar cost.")
+        st.markdown("**Precision** - Of the rows predicted as positive, how many were truly positive.")
+        st.markdown("**Use it when:** false alarms are expensive or annoying.")
+        st.markdown("**Recall** - Of the truly positive rows, how many the model successfully found.")
+        st.markdown("**Use it when:** missing a real positive case is costly.")
+        st.markdown("**F1 Score** - A single balance score for precision and recall.")
+        st.markdown("**Use it when:** both false alarms and missed positives matter.")
         if has_roc_auc:
-            st.markdown("**ROC AUC** — Measures how well the model separates two classes across different thresholds.")
-            st.markdown("**When it matters:** Useful when clear class separation matters.")
+            st.markdown("**ROC AUC** - How well the model separates two classes across possible thresholds.")
+            st.markdown("**Use it when:** you care about ranking positive cases ahead of negative cases, not just one fixed cutoff.")
     else:
-        st.markdown("**R2 Score** — Shows how well the model explains variation in the target.")
-        st.markdown("**When it matters:** Useful for understanding overall explanatory power.")
-        st.markdown("**MAE** — Shows the average absolute prediction error.")
-        st.markdown("**When it matters:** Helpful when you want the error in the target's original units.")
-        st.markdown("**RMSE** — Similar to MAE, but gives more weight to larger mistakes.")
-        st.markdown("**When it matters:** Useful when large errors should be penalized more strongly.")
+        st.markdown("**R2 Score** - How much of the target's variation the model can explain. Higher is better.")
+        st.markdown("**Use it when:** you want a quick sense of overall fit.")
+        st.markdown("**MAE** - The average absolute prediction error in the target's original units. Lower is better.")
+        st.markdown("**Use it when:** you want an easy-to-read typical error size.")
+        st.markdown("**RMSE** - Similar to MAE, but larger mistakes count more. Lower is better.")
+        st.markdown("**Use it when:** big errors are especially harmful.")
 
 
 def get_best_model_info(results_df, problem_type):
@@ -2284,12 +2284,12 @@ def get_kfold_metric_options(kfold_df, problem_type):
 
 def build_kfold_metric_note(metric_name):
     notes = {
-        "ROC AUC": "ROC AUC focuses on class separation across thresholds. It can favor a model that ranks positive cases well even if another model has higher raw accuracy.",
-        "F1 Score": "F1 balances precision and recall. It is useful when false positives and false negatives both matter.",
-        "Accuracy": "Accuracy focuses on the overall share of correct predictions. It is easiest to read, but can be misleading when classes are imbalanced.",
-        "R2 Score": "R2 focuses on explained variation. Higher values indicate stronger regression fit.",
-        "MAE": "MAE focuses on average absolute error. Lower values indicate smaller typical mistakes.",
-        "RMSE": "RMSE penalizes larger errors more strongly. Lower values indicate fewer large mistakes."
+        "ROC AUC": "ROC AUC checks whether positives tend to be ranked ahead of negatives across different thresholds. It can favor a model even when raw accuracy is not the highest.",
+        "F1 Score": "F1 balances precision and recall, so it is useful when false alarms and missed positives both matter.",
+        "Accuracy": "Accuracy is the easiest overall correctness score to read, but it can look too optimistic when one class is much more common than the other.",
+        "R2 Score": "R2 shows how much target variation the model explains. Higher values usually mean a stronger regression fit.",
+        "MAE": "MAE shows the typical absolute prediction error. Lower values mean smaller everyday mistakes.",
+        "RMSE": "RMSE gives extra weight to larger errors. Lower values mean fewer or smaller large misses."
     }
     return notes.get(metric_name, "Select the metric that best matches the decision goal.")
 
@@ -2536,12 +2536,11 @@ flush_pending_toast()
 completed_steps = get_completed_steps()
 show_stage_sidebar(completed_steps)
 install_sidebar_scroll_sync()
-show_workflow_status(completed_steps)
 show_step_progress(completed_steps)
 
 if uploaded_file is not None:
     try:
-        show_section_header("Dataset Preview", "Review the uploaded data before selecting the target column.", anchor="dataset-preview")
+        show_section_header("Dataset Preview", "Check the raw rows, column count, and missing values before choosing what the model should predict.", anchor="dataset-preview")
         df = load_dataset(uploaded_file)
 
         preview_rows = st.selectbox(
@@ -2558,19 +2557,19 @@ if uploaded_file is not None:
         col3.metric("Missing Values", int(df.isnull().sum().sum()))
 
         show_section_divider()
-        show_section_header("Feature and Target Selection", "Choose the target column and decide whether to use all features or only selected ones.")
+        show_section_header("Feature and Target Selection", "Choose the target column, which is what the model should predict, and decide which input columns should help it learn.")
 
         feature_mode = st.radio(
             "How would you like to use features?",
             options=["Use all available features", "Select features manually"],
             index=0,
-            help="You can keep all features or manually select a subset before preprocessing."
+            help="Features are the input columns used to make predictions. You can use every available input or choose a smaller set yourself."
         )
 
         target_column = st.selectbox(
             "Select the target column",
             df.columns,
-            help="The target column is the output variable the model will try to predict."
+            help="The target is the answer column. For example: churn, diagnosis, price, score, or any value you want the model to predict."
         )
 
         selected_feature_columns = None
@@ -2581,7 +2580,7 @@ if uploaded_file is not None:
                 "Select the feature columns to include",
                 options=available_feature_candidates,
                 default=available_feature_candidates[: min(8, len(available_feature_candidates))],
-                help="Only the selected feature columns will be used during preprocessing and model training."
+                help="Only these input columns will be cleaned and used for model training. Leave out columns that leak the answer or should not influence the prediction."
             )
 
         ordinal_source_df = (
@@ -2593,7 +2592,7 @@ if uploaded_file is not None:
         auto_detected_ordinal_columns = ordinal_info["auto_detected_ordinal_columns"]
 
         show_section_divider()
-        show_section_header("Preprocessing Options", "Review the guidance and choose your preprocessing settings.", anchor="preprocessing-options")
+        show_section_header("Preprocessing Options", "Prepare the data so models can read it: handle blanks, encode text categories, and protect useful signal.", anchor="preprocessing-options")
 
         user_selected_ordinal_columns = []
         user_defined_ordinal_mappings = {}
@@ -2603,7 +2602,8 @@ if uploaded_file is not None:
             with st.expander("Ordinal data information"):
                 st.write(
                     "Ordinal data contains categories with a meaningful order. "
-                    "Examples include low < medium < high or mild < moderate < severe."
+                    "Examples include low < medium < high or mild < moderate < severe. "
+                    "Only mark a column as ordinal when the order is real, not just alphabetical."
                 )
 
                 if auto_detected_ordinal_columns:
@@ -2631,7 +2631,7 @@ if uploaded_file is not None:
                 if user_selected_ordinal_columns:
                     st.markdown("### Define category order for selected ordinal columns")
                     st.caption(
-                        "For each selected column, enter the category order from lowest to highest, separated by commas. Matching is case-insensitive."
+                        "For each selected column, enter every category from lowest to highest, separated by commas. Matching is case-insensitive."
                     )
 
                     for col in user_selected_ordinal_columns:
@@ -2678,7 +2678,7 @@ if uploaded_file is not None:
         feature_reduction_available = should_offer_feature_reduction(df_for_size)
 
         if large_dataset_flag:
-            st.warning("This dataset is large. Preprocessing can still run, but model training may take longer.")
+            st.warning("This dataset is large. Preprocessing can still run, but model training and explanations may take longer.")
 
         apply_feature_selection = "No"
         feature_reduction_strategy = "fast_interpretable"
@@ -2688,14 +2688,14 @@ if uploaded_file is not None:
         if feature_reduction_available:
             show_info_box(
                 "Feature Reduction for Explainability",
-                "Because this dataset is relatively large, you can optionally reduce the feature set with Variance Threshold and Pairwise Correlation while keeping original feature names."
+                "Large or very wide datasets can be harder to train and explain. This option removes columns that add little information or repeat nearly the same signal as another column."
             )
 
             apply_feature_selection = st.radio(
                 "Apply feature selection?",
                 options=["No", "Yes"],
                 index=1,
-                help="Uses only Variance Threshold and Pairwise Correlation for large or wide datasets."
+                help="Keeps the feature set smaller by removing low-information or highly similar columns."
             )
 
         if st.button("Run Preprocessing", disabled=bool(ordinal_order_errors)):
@@ -2737,7 +2737,7 @@ if uploaded_file is not None:
             report = st.session_state["preprocessing_report"]
 
             show_section_divider()
-            show_section_header("Preprocessing Review", "Inspect the processed dataset and the main preprocessing outcomes.", anchor="preprocessing-review")
+            show_section_header("Preprocessing Review", "Confirm what changed during cleaning before training a model on the processed data.", anchor="preprocessing-review")
 
             total_dropped_columns = count_total_dropped_columns(report)
             total_missing_filled = len(report.get("filled_missing_numerical", [])) + len(report.get("filled_missing_categorical", []))
@@ -2781,6 +2781,7 @@ if uploaded_file is not None:
                 st.warning("Processed data is empty after preprocessing. Please review the preprocessing report.")
             else:
                 st.subheader("Processed Data Review")
+                show_chart_note("This is the model-ready version of the dataset. Text categories may now appear as encoded numeric columns.")
                 show_dataframe(X_explain_reference.head(), use_container_width=True)
 
             with st.expander("Detailed preprocessing explanations"):
@@ -2842,7 +2843,7 @@ if uploaded_file is not None:
                         st.write(f"- {cls}")
 
             show_section_divider()
-            show_section_header("Feature Relationship Overview", "A direct view of linear relationships in the processed dataset before model-based explanations.", anchor="feature-relationships")
+            show_section_header("Feature Relationship Overview", "A quick pre-model check of which numeric features move together with the target.", anchor="feature-relationships")
 
             explain_X = X_explain_reference.copy()
             corr_table = build_target_correlation_table(
@@ -2858,7 +2859,7 @@ if uploaded_file is not None:
                 corr_profile_note = get_correlation_profile_interpretation(corr_table)
                 show_info_box(
                     "What this section shows",
-                    "This area highlights the features that move most clearly with the target. Values closer to 1 or -1 indicate a stronger relationship, while values near 0 indicate a weaker one."
+                    "This area highlights features that move most clearly with the target before any model explanation is generated. Values near 1 or -1 indicate stronger movement together; values near 0 indicate little straight-line relationship."
                 )
                 show_story_panel("Quick Read", corr_profile_note)
 
@@ -2868,7 +2869,7 @@ if uploaded_file is not None:
                     st.subheader("Strongest Relationships")
                     show_dataframe(corr_table[["Feature", "Correlation with Target"]], use_container_width=True)
                     show_chart_note(
-                        "Positive values suggest the feature tends to rise with the target, while negative values suggest the opposite direction."
+                        "Positive values mean the feature tends to rise as the target rises. Negative values mean it tends to move in the opposite direction. This is pattern-finding, not proof of cause."
                     )
 
                 with corr_col2:
@@ -2876,7 +2877,7 @@ if uploaded_file is not None:
                     if corr_profile_fig is not None:
                         show_chart_frame(corr_profile_fig, use_container_width=True)
                     show_chart_note(
-                        "This chart gives a faster visual read of the table. Bars extending right indicate positive relationships, while bars extending left indicate negative ones."
+                        "This chart is a faster visual read of the table: bars to the right are positive relationships, and bars to the left are negative relationships."
                     )
 
                 with corr_col3:
@@ -2889,7 +2890,7 @@ if uploaded_file is not None:
                     if corr_heatmap_fig is not None:
                         show_chart_frame(corr_heatmap_fig, use_container_width=True)
                     show_chart_note(
-                        "The heatmap shows whether these key features also move together with each other, or in opposite directions."
+                        "The heatmap checks whether the strongest target-related features also move together with each other. Very similar features may tell the model almost the same story."
                     )
 
                 st.session_state["corr_heatmap_fig"] = corr_heatmap_fig
@@ -2904,7 +2905,7 @@ if uploaded_file is not None:
                 st.session_state["corr_profile_note"] = None
 
             show_section_divider()
-            show_section_header("Model Training", "Choose the prediction type first, then decide whether to compare several models or focus on one.", anchor="model-training")
+            show_section_header("Model Training", "Train models on the processed data and compare which approach predicts the target most reliably.", anchor="model-training")
 
             detected_problem_type = detect_problem_type(y)
 
@@ -2919,7 +2920,7 @@ if uploaded_file is not None:
                 "What kind of prediction do you want?",
                 options=[auto_label, "Classification", "Regression"],
                 index=0,
-                help="Choose Classification for category prediction and Regression for numeric value prediction."
+                help="Choose Classification when the target is a label or category. Choose Regression when the target is a continuous number."
             )
 
             if problem_type_display == auto_label:
@@ -2943,7 +2944,7 @@ if uploaded_file is not None:
             training_mode_display = st.radio(
                 "How would you like to train models?",
                 options=["Compare multiple models", "Train a single model"],
-                help="Choose whether to compare several models or focus on a single one."
+                help="Comparing multiple models gives a broader first read. A single model is useful when you already know which method you want to test."
             )
 
             training_mode = "multiple" if training_mode_display == "Compare multiple models" else "single"
@@ -2953,7 +2954,7 @@ if uploaded_file is not None:
                 selected_model_name = st.selectbox(
                     "Select a model",
                     options=list(available_models.keys()),
-                    help="Pick one model to train."
+                    help="Pick one model to train and evaluate on the current dataset."
                 )
 
             if st.button("Train Models"):
@@ -2993,9 +2994,9 @@ if uploaded_file is not None:
             X_explain_reference = st.session_state["X_explain_reference"]
 
             show_section_divider()
-            show_section_header("Results Dashboard", "Review model results, metric comparisons, and classification visuals.", anchor="results-dashboard")
+            show_section_header("Results Dashboard", "Compare model performance and decide which result is strong enough to explain or report.", anchor="results-dashboard")
 
-            st.write(f"Detected problem type: **{problem_type.capitalize()}**")
+            st.write(f"Prediction task: **{problem_type.capitalize()}**")
             best_model_name, best_metric_name, best_metric_value = get_best_model_info(results_df, problem_type)
             show_dataframe(
                 style_best_model_row(results_df, best_metric_name),
@@ -3009,27 +3010,27 @@ if uploaded_file is not None:
                 {
                     "label": "Leading model",
                     "value": best_model_name or "-",
-                    "note": "Currently ranked first in the comparison.",
+                    "note": "Ranked first on the main evaluation metric.",
                     "href": "#model-ranking",
                     "accent": "#3B82F6"
                 },
                 {
                     "label": "Primary metric",
                     "value": best_metric_name or "-",
-                    "note": f"Score: {format_metric_value(best_metric_value)}",
+                    "note": f"Main score: {format_metric_value(best_metric_value)}",
                     "href": "#metric-comparisons",
                     "accent": "#8B5CF6"
                 },
                 {
                     "label": "Models compared",
                     "value": str(len(results_df)),
-                    "note": "Evaluated side by side on the same dataset.",
+                    "note": "Trained and tested under the same setup.",
                     "accent": "#10B981"
                 },
                 {
                     "label": "Decision focus",
                     "value": get_metric_focus_label(problem_type),
-                    "note": "Frames the result in plain business-facing language.",
+                    "note": "A plain-language lens for reading the score.",
                     "accent": "#F59E0B"
                 }
             ])
@@ -3043,7 +3044,7 @@ if uploaded_file is not None:
                 st.subheader("Model Ranking")
                 show_chart_frame(leaderboard_fig, use_container_width=False)
                 show_chart_note(
-                    "This chart ranks the models by the main success metric. The model at the top is the strongest current candidate."
+                    "This chart ranks models by the main success metric. The top model is the strongest current candidate, but close scores should be checked with stability and explainability."
                 )
 
             has_roc_auc = "ROC AUC" in results_df.columns
@@ -3054,23 +3055,23 @@ if uploaded_file is not None:
 
             with st.expander("Detailed model explanations"):
                 if problem_type == "classification":
-                    st.write("Classification models are evaluated by how accurately and consistently they predict the correct class.")
-                    st.write("Confusion Matrix shows where the model is correct and where it mixes up classes.")
+                    st.write("Classification models predict categories or labels. The goal is not only to be correct often, but also to understand which kinds of mistakes are being made.")
+                    st.write("The Confusion Matrix shows correct predictions on the diagonal and mistakes outside the diagonal.")
                     if has_roc_auc:
-                        st.write("ROC Curve shows how well the model separates two classes across different decision thresholds.")
+                        st.write("The ROC Curve shows whether the model can rank positive cases ahead of negative cases across different thresholds.")
                 else:
-                    st.write("Regression models are evaluated by how close their predictions are to the real numeric values.")
-                    st.write("R2 Score shows explanatory power, while MAE and RMSE show prediction error size.")
+                    st.write("Regression models predict numeric values. The goal is to keep predictions close to the real values.")
+                    st.write("R2 Score summarizes overall fit, while MAE and RMSE show how large the prediction errors are.")
 
             if problem_type == "classification":
                 show_info_box(
                     "Model Selection Guide",
-                    "Accuracy is the primary ranking metric in the dashboard and shows the overall correct prediction rate. ROC AUC focuses on how well a model separates two classes across thresholds. K-fold checks whether Accuracy remains consistent across repeated splits. These views can highlight different models; when they disagree, compare the size of the gap and choose the metric that best matches the decision goal."
+                    "Accuracy is the main ranking metric here because it is the easiest overall correctness score to read. ROC AUC answers a different question: how well the model separates two classes before choosing a cutoff. K-fold checks whether performance stays steady when the train/test split changes. If these views disagree, compare the size of the gap and choose the metric that best matches the decision risk."
                 )
             else:
                 show_info_box(
                     "Model Selection Guide",
-                    "R2 Score is the primary ranking metric and shows how much target variation the model explains. MAE and RMSE show prediction error size. K-fold checks whether R2 remains consistent across repeated splits."
+                    "R2 Score is the main ranking metric here because it summarizes overall fit. MAE and RMSE translate performance into error size, which is often easier to explain to a non-technical audience. K-fold checks whether the result stays steady when the train/test split changes."
                 )
 
             kfold_df = st.session_state.get("kfold_df")
@@ -3080,7 +3081,7 @@ if uploaded_file is not None:
             kfold_cost, kfold_cost_note = get_kfold_cost_label(X, len(detailed_results))
             show_info_box(
                 "K-Fold Cross-Validation",
-                f"Runs the selected model set across several train/test splits and reports {get_primary_stability_metric(problem_type)} stability. Estimated workload: {kfold_cost}. {kfold_cost_note}"
+                f"Runs the selected models across several train/test splits instead of trusting one split only. This helps answer: would the model still look good if different rows were used for testing? Reported stability metric: {get_primary_stability_metric(problem_type)}. Estimated workload: {kfold_cost}. {kfold_cost_note}"
             )
             if st.button("Run K-Fold Stability Check"):
                 with st.spinner("Running K-fold stability check..."):
@@ -3131,9 +3132,9 @@ if uploaded_file is not None:
                     st.session_state["kfold_fig"] = kfold_fig
                     st.session_state["kfold_note"] = kfold_note
                     show_chart_note(
-                        f"Stability is evaluated with {selected_kfold_metric}. This section is a consistency check, not a replacement for the main dashboard ranking. ROC AUC can still favor another model because it measures class separation rather than overall correctness."
+                        f"Stability is evaluated with {selected_kfold_metric}. This is a consistency check, not a replacement for the main ranking. ROC AUC can still favor another model because it measures class separation rather than overall correctness."
                         if problem_type == "classification"
-                        else "Stability is evaluated with R2 Score, which measures explained variation across repeated splits."
+                        else "Stability is evaluated with R2 Score, which measures explained variation across repeated train/test splits."
                     )
                 if kfold_fig is not None:
                     kf_left, kf_mid, kf_right = st.columns([0.18, 0.64, 0.18])
@@ -3161,7 +3162,7 @@ if uploaded_file is not None:
                 model_to_show = st.selectbox(
                     "Select a model for confusion matrix",
                     options=list(detailed_results.keys()),
-                    help="Choose which model's confusion matrix to inspect."
+                    help="Choose which model's correct and incorrect class predictions to inspect."
                 )
 
                 selected_details = detailed_results[model_to_show]
@@ -3178,11 +3179,11 @@ if uploaded_file is not None:
                     show_chart_frame(roc_fig, use_container_width=False)
                     show_info_box("ROC Curve Insight", get_roc_interpretation(detailed_results))
                     show_chart_note(
-                        "ROC AUC and Accuracy can lead to different model preferences. Use ROC AUC when separation between two classes is the priority; use Accuracy when the overall correct prediction rate is the priority."
+                        "ROC AUC and Accuracy can lead to different model preferences. Use ROC AUC when class separation is the priority; use Accuracy when the overall correct prediction rate is the priority."
                     )
 
             show_section_divider()
-            show_section_header("SHAP Explainability", "Select the model you want to interpret after reviewing the evaluation results.", anchor="shap-explainability")
+            show_section_header("SHAP Explainability", "Explain which features pushed model predictions up, down, toward a class, or away from it.", anchor="shap-explainability")
 
             show_info_box(
                 "How to choose a model for SHAP",
@@ -3192,7 +3193,7 @@ if uploaded_file is not None:
             shap_model_name = st.selectbox(
                 "Select the model to explain with SHAP",
                 options=list(detailed_results.keys()),
-                help="Choose the trained model whose predictions you want to interpret."
+                help="Choose the trained model whose behavior you want to explain. Start with the leading model unless another model is more stable or easier to justify."
             )
 
             if st.button("Generate SHAP Analysis"):
@@ -3242,17 +3243,17 @@ if uploaded_file is not None:
                     {
                         "label": "Explained model",
                         "value": shap_model_name,
-                        "note": "These SHAP explanations are based on this model."
+                        "note": "All explanation charts below describe this model."
                     },
                     {
                         "label": "Top feature",
                         "value": str(top_feature_name),
-                        "note": "Ranks first in overall influence."
+                        "note": "Has the strongest average influence in this sample."
                     },
                     {
                         "label": "Samples reviewed",
                         "value": str(len(shap_outputs["X_explain"])),
-                        "note": "The explanation was built from this analysis sample."
+                        "note": "Rows used to estimate the explanation."
                     },
                     {
                         "label": "Reading mode",
@@ -3266,7 +3267,7 @@ if uploaded_file is not None:
                 ])
                 show_story_panel(
                     "Interpretation workflow",
-                    "Review the global feature ranking first, then inspect an individual prediction, and finally evaluate how a selected feature changes model behavior."
+                    "Start with the global ranking to see what matters most overall. Then use the feature behavior charts to see whether a feature usually pushes predictions up, down, toward a class, or away from it."
                 )
 
                 shap_col1, shap_col2 = st.columns([1.0, 1.15])
@@ -3275,14 +3276,14 @@ if uploaded_file is not None:
                     st.subheader("Top Influential Features")
                     show_dataframe(importance_df.head(8).round(4), use_container_width=True, height=260)
                     show_chart_note(
-                        "Features are ranked by average absolute SHAP impact. Higher values indicate stronger overall influence on model output."
+                        "Features are ranked by average absolute SHAP impact. Higher values mean the feature changed predictions more strongly on average."
                     )
 
                 with shap_col2:
                     if shap_bar_fig is not None:
                         show_chart_frame(shap_bar_fig, use_container_width=True)
                     show_chart_note(
-                        "Longer bars indicate stronger average contribution across the analyzed sample."
+                        "Longer bars mean stronger average contribution across the analyzed sample. This shows importance, not whether the effect is positive or negative."
                     )
 
                 st.subheader("Overall Distribution View")
@@ -3294,13 +3295,13 @@ if uploaded_file is not None:
                     (
                         f"Each point represents one row. Points to the right increase support for {positive_class_text}; points to the left decrease it."
                         if problem_type == "classification"
-                        else "Each point represents one row. Position indicates whether the feature increased or decreased the predicted value for that row."
+                        else "Each point represents one row. Points to the right pushed that row's prediction higher; points to the left pushed it lower."
                     )
                 )
 
                 st.subheader("How One Feature Changes the Result")
                 st.caption(
-                    "Select a feature to inspect its relationship with model output."
+                    "Select a feature to see how its values relate to the model's output."
                 )
 
                 show_chart_note(
@@ -3317,7 +3318,7 @@ if uploaded_file is not None:
                     "Choose features for behavior charts and report",
                     options=available_effect_features,
                     default=available_effect_features[:1],
-                    help="Select up to three features. Each selected feature will be shown in the app and included in the exported report."
+                    help="Select up to three important features to inspect in more detail and include in the exported report."
                 )
 
                 if len(selected_effect_features) > 3:
@@ -3336,7 +3337,7 @@ if uploaded_file is not None:
                         (
                             f"The left chart shows observed SHAP contribution: green points increase support for {positive_class_text}, while red points decrease it. The right chart runs controlled what-if checks by moving the selected feature while keeping other values fixed."
                             if problem_type == "classification"
-                            else "The left chart shows observed SHAP contribution: green points increased the predicted value and red points decreased it. The right chart runs controlled what-if checks by moving the selected feature while keeping other values fixed."
+                            else "The left chart shows observed SHAP contribution: green points pushed predictions higher and red points pushed them lower. The right chart runs controlled what-if checks by moving the selected feature while keeping other values fixed."
                         )
                     )
 
@@ -3430,14 +3431,14 @@ if uploaded_file is not None:
                         (
                             f"This summary chart shows whether high-impact features usually move predictions toward {positive_class_text}, away from it, or behave in a mixed way."
                             if problem_type == "classification"
-                            else "This summary chart quickly shows whether high-impact features usually raise the predicted value, lower it, or behave in a mixed way."
+                            else "This summary chart shows whether high-impact features usually raise the predicted value, lower it, or behave in a mixed way."
                         )
                     )
                 with behavior_col2:
                     st.subheader("Behavior Summary Table")
                     show_dataframe(behavior_df.head(6).round(4), use_container_width=True, height=240)
                     show_chart_note(
-                        "The table summarizes average impact strength and the dominant direction observed in the analysis sample."
+                        "The table summarizes how strongly each feature tends to matter and the dominant direction seen in the analysis sample."
                     )
 
                 st.session_state["shap_effect_fig"] = effect_fig

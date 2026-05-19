@@ -486,7 +486,7 @@ def get_confusion_matrix_interpretation(confusion_matrix_array, class_labels):
     else:
         quality = "The model is mixing classes quite often, so the results should be interpreted carefully."
 
-    class_text = f"Off-diagonal cells show where classes such as {', '.join(class_labels)} are being confused with one another."
+    class_text = f"The diagonal cells are correct predictions. Off-diagonal cells show where classes such as {', '.join(class_labels)} are being confused with one another."
     return f"{quality} {class_text}"
 
 
@@ -513,7 +513,7 @@ def get_roc_interpretation(detailed_results):
         strength = "limited"
 
     return (
-        f"This chart shows how cleanly the model separates the two classes. "
+        f"This chart shows how cleanly the model ranks one class above the other before a final cutoff is chosen. "
         f"The best curve belongs to {best_model_name} with an AUC of {best_auc:.3f}. "
         f"That suggests {strength} separation power."
     )
@@ -530,17 +530,17 @@ def get_metric_commentary(results_df, metric_name, problem_type):
 
     if problem_type == "classification":
         explanations = {
-            "Accuracy": "stands out on overall correctness",
-            "Precision": "looks stronger at reducing false alarms",
-            "Recall": "looks stronger at capturing true positives",
-            "F1 Score": "appears to strike the best balance",
-            "ROC AUC": "offers the clearest class separation",
+            "Accuracy": "has the highest overall correct prediction rate",
+            "Precision": "is strongest when false alarms should be reduced",
+            "Recall": "is strongest when missed positives should be reduced",
+            "F1 Score": "gives the best balance between precision and recall",
+            "ROC AUC": "separates the classes most clearly across thresholds",
         }
         detail = explanations.get(metric_name, "delivers the best result on this metric")
-        return f"In the {metric_name} chart, {model_name} leads with a score of {value:.3f} and {detail}."
+        return f"In the {metric_name} chart, {model_name} leads with {value:.3f}. This means it {detail}."
 
     if metric_name == "R2 Score":
-        return f"Based on R2, {model_name} is the strongest option for explaining the target, with a score of {value:.3f}."
+        return f"Based on R2, {model_name} explains the target best among the tested models, with a score of {value:.3f}."
     if metric_name == "MAE":
         return f"For MAE, lower is better. Here, {model_name} keeps the average error lowest at {value:.3f}."
     if metric_name == "RMSE":
@@ -569,16 +569,16 @@ def get_model_recommendation_text(results_df, problem_type):
         gap = 0.0
 
     if gap >= 0.05:
-        gap_text = "It separates clearly from the rest of the field."
+        gap_text = "Its lead is clear enough to treat it as the first candidate."
     elif gap >= 0.02:
-        gap_text = "It has a small but meaningful edge over the alternatives."
+        gap_text = "Its lead is small but meaningful."
     else:
-        gap_text = "It ranks first, but the margin versus the other models is still quite close."
+        gap_text = "It ranks first, but the margin versus the other models is close."
 
     audience_text = (
-        "That makes it a sensible first choice to carry forward."
+        "That makes it a sensible first choice for explanation and reporting."
         if gap >= 0.02 else
-        "In this case, explainability and stability may matter almost as much as the score itself."
+        "In this case, explainability and stability should matter almost as much as the score itself."
     )
 
     return (
@@ -607,9 +607,9 @@ def get_correlation_profile_interpretation(corr_table):
 
     return (
         f"The most noticeable relationship appears in {feature}. "
-        f"This feature {direction} with the target, and the relationship looks {strength_text} "
+        f"This feature {direction} as the target, and the relationship looks {strength_text} "
         f"(correlation: {corr_value:.2f}). "
-        f"This section does not prove causation; it simply highlights patterns that move together."
+        f"This section does not prove cause and effect; it simply highlights patterns that move together."
     )
 
 
