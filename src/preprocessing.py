@@ -381,6 +381,25 @@ def resolve_protected_transformed_columns(protected_original_features, transform
     return protected_transformed
 
 
+def replace_zero_values_with_missing(df, columns, target_column=None):
+    data = df.copy()
+    replaced_counts = {}
+
+    for col in columns or []:
+        if col not in data.columns or col == target_column:
+            continue
+
+        numeric_values = pd.to_numeric(data[col], errors="coerce")
+        zero_mask = numeric_values.eq(0) & data[col].notna()
+        zero_count = int(zero_mask.sum())
+
+        if zero_count > 0:
+            data.loc[zero_mask, col] = np.nan
+            replaced_counts[col] = zero_count
+
+    return data, replaced_counts
+
+
 def remove_low_variance_features(X, protected_columns=None, variance_threshold=0.0001):
     protected_columns = protected_columns or set()
     variances = X.var(numeric_only=True)
@@ -486,6 +505,7 @@ def preprocess_data(
         apply_feature_reduction=False,
         feature_reduction_strategy="fast_interpretable",
         protected_original_features=None,
+        zero_as_missing_columns=None,
         low_variance_threshold=0.0001,
         high_correlation_threshold=0.95,
         top_k_important_features=40
@@ -504,6 +524,7 @@ def preprocess_data(
     user_selected_ordinal_columns = user_selected_ordinal_columns or []
     user_defined_ordinal_mappings = user_defined_ordinal_mappings or {}
     protected_original_features = protected_original_features or []
+    zero_as_missing_columns = zero_as_missing_columns or []
 
     report = {
         "initial_shape": data.shape,
@@ -529,6 +550,9 @@ def preprocess_data(
         "numerical_columns_before_encoding": [],
         "filled_missing_numerical": [],
         "filled_missing_categorical": [],
+        "zero_as_missing_columns": [],
+        "zero_as_missing_counts": {},
+        "zero_missing_values_replaced": 0,
         "target_encoded": False,
         "target_classes": None,
         "target_label_mapping": None,
@@ -574,6 +598,15 @@ def preprocess_data(
         conversion_threshold=object_to_numeric_threshold
     )
     report["converted_to_numeric"] = converted_columns
+
+    data, zero_as_missing_counts = replace_zero_values_with_missing(
+        data,
+        columns=zero_as_missing_columns,
+        target_column=target_column
+    )
+    report["zero_as_missing_counts"] = zero_as_missing_counts
+    report["zero_as_missing_columns"] = list(zero_as_missing_counts.keys())
+    report["zero_missing_values_replaced"] = int(sum(zero_as_missing_counts.values()))
 
     high_missing_columns = []
 

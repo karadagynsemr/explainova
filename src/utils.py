@@ -48,6 +48,14 @@ def _build_preprocessing_steps(report: dict) -> list:
             f"{', '.join(parsed_dt)}"
         )
 
+    zero_counts = report.get("zero_as_missing_counts", {})
+    if zero_counts:
+        replaced_total = sum(zero_counts.values())
+        steps.append(
+            f"Converted {replaced_total} zero placeholder value(s) to missing across "
+            f"{len(zero_counts)} selected column(s)."
+        )
+
     filled_num = report.get("filled_missing_numerical", [])
     if filled_num:
         steps.append(f"Filled missing values in {len(filled_num)} numeric column(s) using the column median.")

@@ -2045,12 +2045,73 @@ def flush_pending_toast():
 
 
 def show_list(title, items):
+    if not items:
+        return False
+
     st.markdown(f"**{title}**")
-    if items:
-        for item in items:
-            st.write(f"- {item}")
+    for item in items:
+        st.write(f"- {item}")
+    return True
+
+
+def show_list_group(title, list_entries):
+    non_empty_entries = [
+        (entry_title, items)
+        for entry_title, items in list_entries
+        if items
+    ]
+
+    if not non_empty_entries:
+        return False
+
+    st.subheader(title)
+    for entry_title, items in non_empty_entries:
+        show_list(entry_title, items)
+
+    return True
+
+
+def build_zero_value_summary(df, target_column, selected_feature_columns=None, numeric_parse_threshold=0.80):
+    if selected_feature_columns is None:
+        candidate_columns = [col for col in df.columns if col != target_column]
     else:
-        st.write("None")
+        candidate_columns = [col for col in selected_feature_columns if col in df.columns and col != target_column]
+
+    rows = []
+
+    for col in candidate_columns:
+        series = df[col]
+        non_null = series.dropna()
+
+        if non_null.empty or pd.api.types.is_bool_dtype(series):
+            continue
+
+        numeric_values = pd.to_numeric(series, errors="coerce")
+        numeric_count = int(numeric_values.notna().sum())
+
+        if numeric_count == 0 or numeric_count / len(non_null) < numeric_parse_threshold:
+            continue
+
+        zero_count = int((numeric_values.eq(0) & series.notna()).sum())
+
+        if zero_count == 0:
+            continue
+
+        rows.append({
+            "Column": col,
+            "Zero Values": zero_count,
+            "Zero Share": zero_count / len(series),
+            "Non-null Values": int(non_null.shape[0])
+        })
+
+    if not rows:
+        return pd.DataFrame(columns=["Column", "Zero Values", "Zero Share", "Non-null Values"])
+
+    return (
+        pd.DataFrame(rows)
+        .sort_values(by=["Zero Values", "Column"], ascending=[False, True])
+        .reset_index(drop=True)
+    )
 
 
 def count_total_dropped_columns(report):
@@ -2080,36 +2141,76 @@ def explain_preprocessing_step(title, explanation):
 def show_preprocessing_explanations(report):
     st.subheader("Detailed Preprocessing Explanations")
 
-    explain_preprocessing_step(
-        "Duplicate rows removed",
-        "Rows that were exactly the same were removed. This helps prevent the model from giving extra weight to repeated observations."
-    )
-    explain_preprocessing_step(
-        "Empty and problematic columns removed",
-        "Columns were removed only when they were unlikely to help prediction, such as fully empty columns, one-value columns, ID-like columns, or columns with too many unique categories."
-    )
-    explain_preprocessing_step(
-        "Missing values handled",
-        "Blank cells were filled in so the model can train without failing. Numeric blanks use the median value; categorical blanks use the most common category."
-    )
-    explain_preprocessing_step(
-        "Datetime columns transformed",
-        "Date and time columns were converted into useful parts such as year, month, day, and weekday, because models usually learn better from these pieces than from raw date text."
-    )
-    explain_preprocessing_step(
-        "Outliers reviewed",
-        "Very unusual numeric values were reviewed. Extreme values can dominate training, so the app caps the most extreme ones when needed."
-    )
-    explain_preprocessing_step(
-        "Categorical columns encoded",
-        "Text categories were converted into numbers. Ordered categories keep their order, while unordered categories are expanded into separate yes/no columns."
-    )
+    shown_any = False
+
+    if report.get("removed_duplicates", 0) > 0:
+        shown_any = True
+        explain_preprocessing_step(
+            "Duplicate rows removed",
+            "Rows that were exactly the same were removed. This helps prevent the model from giving extra weight to repeated observations."
+        )
+
+    if (
+        report.get("dropped_empty_columns")
+        or report.get("dropped_high_missing_columns")
+        or report.get("dropped_single_value_columns")
+        or report.get("dropped_id_columns")
+        or report.get("dropped_high_cardinality_columns")
+    ):
+        shown_any = True
+        explain_preprocessing_step(
+            "Problematic columns removed",
+            "Columns were removed only when they were unlikely to help prediction, such as fully empty columns, one-value columns, ID-like columns, high-missing columns, or columns with too many unique categories."
+        )
+
+    if report.get("zero_as_missing_columns"):
+        shown_any = True
+        explain_preprocessing_step(
+            "Zero placeholders treated as missing",
+            "The selected columns had 0 values converted to missing values before imputation, because the user marked those zeros as placeholders rather than real measurements."
+        )
+
+    if report.get("filled_missing_numerical") or report.get("filled_missing_categorical"):
+        shown_any = True
+        explain_preprocessing_step(
+            "Missing values handled",
+            "Blank cells were filled in so the model can train without failing. Numeric blanks use the median value; categorical blanks use the most common category."
+        )
+
+    if report.get("parsed_datetime_columns"):
+        shown_any = True
+        explain_preprocessing_step(
+            "Datetime columns transformed",
+            "Date and time columns were converted into useful parts such as year, month, day, and weekday, because models usually learn better from these pieces than from raw date text."
+        )
+
+    if report.get("capped_outlier_columns"):
+        shown_any = True
+        explain_preprocessing_step(
+            "Extreme outliers capped",
+            "Very unusual numeric values were capped so the most extreme values do not dominate training."
+        )
+
+    if (
+        report.get("ordinal_encoded_columns")
+        or report.get("one_hot_encoded_columns")
+        or report.get("target_encoded")
+    ):
+        shown_any = True
+        explain_preprocessing_step(
+            "Categorical columns encoded",
+            "Text categories were converted into numbers. Ordered categories keep their order, while unordered categories are expanded into separate yes/no columns."
+        )
 
     if report.get("feature_reduction_applied"):
+        shown_any = True
         explain_preprocessing_step(
             "Feature reduction",
             "The dataset was large or wide, so optional feature reduction simplified the input columns. This keeps the model easier to train and explain while preserving meaningful feature names."
         )
+
+    if not shown_any:
+        st.info("No major preprocessing changes were needed before model training.")
 
 
 def show_metric_explanations(problem_type, has_roc_auc=False):
@@ -2674,6 +2775,29 @@ if uploaded_file is not None:
         else:
             df_for_size = df
 
+        zero_as_missing_columns = []
+        zero_value_summary = build_zero_value_summary(
+            df,
+            target_column=target_column,
+            selected_feature_columns=selected_feature_columns
+        )
+
+        if not zero_value_summary.empty:
+            with st.expander("Zero value check"):
+                st.write(
+                    "Some numeric columns contain 0 values. In some datasets 0 is a real value; "
+                    "in others it is used as a placeholder for a missing value."
+                )
+                zero_display = zero_value_summary.copy()
+                zero_display["Zero Share"] = zero_display["Zero Share"].map(lambda value: f"{value:.1%}")
+                show_dataframe(zero_display, use_container_width=True)
+
+                zero_as_missing_columns = st.multiselect(
+                    "Which columns have 0 values that should be treated as missing?",
+                    options=zero_value_summary["Column"].tolist(),
+                    help="Selected columns will have 0 values converted to missing values before median/mode imputation."
+                )
+
         large_dataset_flag = is_large_dataset(df_for_size)
         feature_reduction_available = should_offer_feature_reduction(df_for_size)
 
@@ -2716,6 +2840,7 @@ if uploaded_file is not None:
                         apply_feature_reduction=(apply_feature_selection == "Yes"),
                         feature_reduction_strategy=feature_reduction_strategy,
                         protected_original_features=protected_original_features,
+                        zero_as_missing_columns=zero_as_missing_columns,
                         low_variance_threshold=0.0001,
                         high_correlation_threshold=feature_selection_correlation_threshold,
                         top_k_important_features=40
@@ -2798,34 +2923,44 @@ if uploaded_file is not None:
                 else:
                     st.write(report.get("selected_feature_columns"))
 
-                st.subheader("Dropped Columns")
-                show_list("Empty Columns", report.get("dropped_empty_columns", []))
-                show_list("High-Missing Columns", report.get("dropped_high_missing_columns", []))
-                show_list("Single-Value Columns", report.get("dropped_single_value_columns", []))
-                show_list("ID Columns", report.get("dropped_id_columns", []))
-                show_list("High-Cardinality Columns", report.get("dropped_high_cardinality_columns", []))
+                show_list_group("Dropped Columns", [
+                    ("Empty Columns", report.get("dropped_empty_columns", [])),
+                    ("High-Missing Columns", report.get("dropped_high_missing_columns", [])),
+                    ("Single-Value Columns", report.get("dropped_single_value_columns", [])),
+                    ("ID Columns", report.get("dropped_id_columns", [])),
+                    ("High-Cardinality Columns", report.get("dropped_high_cardinality_columns", [])),
+                ])
 
-                st.subheader("Type Conversion")
-                show_list("Converted to Numeric", report.get("converted_to_numeric", []))
-                show_list("Parsed Datetime Columns", report.get("parsed_datetime_columns", []))
-                show_list("Created Datetime Features", report.get("created_datetime_features", []))
+                show_list_group("Type Conversion", [
+                    ("Converted to Numeric", report.get("converted_to_numeric", [])),
+                    ("Parsed Datetime Columns", report.get("parsed_datetime_columns", [])),
+                    ("Created Datetime Features", report.get("created_datetime_features", [])),
+                ])
 
-                st.subheader("Missing Value Handling")
-                show_list("Filled Numerical Columns", report.get("filled_missing_numerical", []))
-                show_list("Filled Categorical Columns", report.get("filled_missing_categorical", []))
+                missing_entries = [
+                    ("Zero-as-Missing Columns", [
+                        f"{col}: {count} zero value(s)"
+                        for col, count in report.get("zero_as_missing_counts", {}).items()
+                    ]),
+                    ("Filled Numerical Columns", report.get("filled_missing_numerical", [])),
+                    ("Filled Categorical Columns", report.get("filled_missing_categorical", [])),
+                ]
+                show_list_group("Missing Value Handling", missing_entries)
 
-                st.subheader("Encoding")
-                show_list("Auto-detected Ordinal Columns", report.get("auto_detected_ordinal_columns", []))
-                show_list("User-selected Ordinal Columns", report.get("user_selected_ordinal_columns", []))
-                show_list("User-defined Ordinal Columns", report.get("user_defined_ordinal_columns", []))
-                show_list("Ordinal Columns That Could Not Be Safely Encoded", report.get("failed_user_ordinal_columns", []))
-                show_list("Ordinal Encoded Columns", report.get("ordinal_encoded_columns", []))
-                show_list("One-Hot Encoded Columns", report.get("one_hot_encoded_columns", []))
+                show_list_group("Encoding", [
+                    ("Auto-detected Ordinal Columns", report.get("auto_detected_ordinal_columns", [])),
+                    ("User-selected Ordinal Columns", report.get("user_selected_ordinal_columns", [])),
+                    ("User-defined Ordinal Columns", report.get("user_defined_ordinal_columns", [])),
+                    ("Ordinal Columns That Could Not Be Safely Encoded", report.get("failed_user_ordinal_columns", [])),
+                    ("Ordinal Encoded Columns", report.get("ordinal_encoded_columns", [])),
+                    ("One-Hot Encoded Columns", report.get("one_hot_encoded_columns", [])),
+                ])
 
-                st.subheader("Outlier Handling")
-                outlier_df = build_outlier_dataframe(report)
-                show_dataframe(outlier_df, use_container_width=True)
-                show_list("Columns with Capped Extreme Outliers", report.get("capped_outlier_columns", []))
+                if report.get("capped_outlier_columns"):
+                    st.subheader("Outlier Handling")
+                    outlier_df = build_outlier_dataframe(report)
+                    show_dataframe(outlier_df, use_container_width=True)
+                    show_list("Columns with Capped Extreme Outliers", report.get("capped_outlier_columns", []))
 
                 if report.get("feature_reduction_applied"):
                     st.subheader("Feature Selection")
@@ -2835,8 +2970,9 @@ if uploaded_file is not None:
                     show_list("Removed Low-Variance Features", report.get("removed_low_variance_columns", []))
                     show_list("Removed Highly Correlated Features", report.get("removed_high_correlation_columns", []))
 
-                st.subheader("Target Information")
-                st.write(f"Target encoded: {report.get('target_encoded')}")
+                if report.get("target_encoded") or report.get("target_classes") is not None:
+                    st.subheader("Target Information")
+                    st.write(f"Target encoded: {report.get('target_encoded')}")
                 if report.get("target_classes") is not None:
                     st.write("Target classes:")
                     for cls in report.get("target_classes", []):
