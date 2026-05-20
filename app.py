@@ -1,6 +1,7 @@
 import os
 import re
 import html as html_lib
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -1604,14 +1605,25 @@ def get_completed_steps() -> int:
 
 
 def sync_uploaded_file_state(uploaded_file):
-    if uploaded_file is None:
+    if not uploaded_file:
         st.session_state["data_uploaded"] = False
         st.session_state["last_uploaded_filename"] = None
+        st.session_state["last_uploaded_display_name"] = None
         return
 
-    current_name = uploaded_file.name
+    if isinstance(uploaded_file, list):
+        current_name = " + ".join(
+            f"{file.name}:{getattr(file, 'size', 0)}"
+            for file in uploaded_file
+        )
+        display_name = " + ".join(file.name for file in uploaded_file)
+    else:
+        current_name = f"{uploaded_file.name}:{getattr(uploaded_file, 'size', 0)}"
+        display_name = uploaded_file.name
+
     if st.session_state.get("last_uploaded_filename") != current_name:
         st.session_state["last_uploaded_filename"] = current_name
+        st.session_state["last_uploaded_display_name"] = display_name
         st.session_state["data_uploaded"] = True
         reset_training_state()
         for key in [
@@ -1625,6 +1637,8 @@ def sync_uploaded_file_state(uploaded_file):
             "corr_table_for_report",
             "corr_profile_fig",
             "corr_profile_note",
+            "loaded_dataset_files",
+            "combined_dataset_info",
         ]:
             if key in st.session_state:
                 del st.session_state[key]
@@ -2492,6 +2506,169 @@ def build_report_filename(dataset_filename):
     return f"{stem} - Explainova - Analysis.docx"
 
 
+def load_uploaded_datasets(uploaded_files):
+    loaded = []
+
+    for uploaded in uploaded_files:
+        df_loaded = load_dataset(uploaded)
+        loaded.append({
+            "name": uploaded.name,
+            "dataframe": df_loaded,
+        })
+
+    return loaded
+
+
+def get_common_columns(loaded_datasets):
+    if not loaded_datasets:
+        return []
+
+    common = set(loaded_datasets[0]["dataframe"].columns)
+    for item in loaded_datasets[1:]:
+        common &= set(item["dataframe"].columns)
+
+    return sorted(common)
+
+
+def build_loaded_files_summary(loaded_datasets):
+    return pd.DataFrame([
+        {
+            "File": item["name"],
+            "Rows": item["dataframe"].shape[0],
+            "Columns": item["dataframe"].shape[1],
+        }
+        for item in loaded_datasets
+    ])
+
+
+def combine_datasets_by_rows(loaded_datasets):
+    all_columns = sorted({
+        col
+        for item in loaded_datasets
+        for col in item["dataframe"].columns
+    })
+    combined = pd.concat(
+        [
+            item["dataframe"].reindex(columns=all_columns).assign(_source_file=item["name"])
+            for item in loaded_datasets
+        ],
+        ignore_index=True
+    )
+
+    return combined, {
+        "method": "Stack rows",
+        "source_files": [item["name"] for item in loaded_datasets],
+    }
+
+
+def make_unique_column_name(base_name, existing_columns):
+    candidate = base_name
+    counter = 2
+
+    while candidate in existing_columns:
+        candidate = f"{base_name}_{counter}"
+        counter += 1
+
+    return candidate
+
+
+def merge_datasets_by_key(loaded_datasets, key_columns, merge_how):
+    merged = loaded_datasets[0]["dataframe"].copy()
+    source_files = [loaded_datasets[0]["name"]]
+
+    for idx, item in enumerate(loaded_datasets[1:], start=2):
+        right_df = item["dataframe"].copy()
+        suffix = re.sub(r"[^A-Za-z0-9_]+", "_", Path(item["name"]).stem).strip("_") or f"file_{idx}"
+        rename_map = {}
+
+        for col in right_df.columns:
+            if col in key_columns or col not in merged.columns:
+                continue
+
+            rename_map[col] = make_unique_column_name(f"{col}__{suffix}", set(merged.columns) | set(right_df.columns))
+
+        if rename_map:
+            right_df = right_df.rename(columns=rename_map)
+
+        merged = merged.merge(
+            right_df,
+            on=key_columns,
+            how=merge_how,
+        )
+        source_files.append(item["name"])
+
+    return merged, {
+        "method": f"Merge by key ({merge_how})",
+        "key_columns": key_columns,
+        "source_files": source_files,
+    }
+
+
+def show_multi_file_combine_controls(loaded_datasets):
+    st.subheader("Combine Uploaded Files")
+    show_dataframe(build_loaded_files_summary(loaded_datasets), use_container_width=True)
+
+    combine_mode = st.radio(
+        "How should these files be combined?",
+        options=["Merge by shared ID columns", "Stack rows with matching columns"],
+        help="Use merge when files contain different columns for the same entities. Use stack when files contain more rows of the same table."
+    )
+
+    if combine_mode == "Stack rows with matching columns":
+        combined_df, combine_info = combine_datasets_by_rows(loaded_datasets)
+        show_compact_success(f"Combined {len(loaded_datasets)} files by stacking rows.")
+        return combined_df, combine_info
+
+    common_columns = get_common_columns(loaded_datasets)
+
+    if not common_columns:
+        st.error("These files do not share any column names, so they cannot be merged by ID.")
+        return None, None
+
+    default_keys = [
+        col for col in common_columns
+        if col.strip().lower() in {"id", "patient_id", "sample_id", "record_id", "user_id", "customer_id"}
+        or col.strip().lower().endswith("_id")
+    ]
+
+    key_columns = st.multiselect(
+        "Select the ID/key column(s) to merge on",
+        options=common_columns,
+        default=default_keys[:1],
+        help="Choose one or more columns that identify the same row/entity across all uploaded files."
+    )
+
+    merge_how = st.selectbox(
+        "Merge type",
+        options=["inner", "left", "outer"],
+        index=0,
+        help="Inner keeps only matching IDs. Left keeps all rows from the first file. Outer keeps all IDs from every file."
+    )
+
+    if not key_columns:
+        st.info("Select at least one shared ID/key column to preview and continue.")
+        return None, None
+
+    duplicate_messages = []
+    for item in loaded_datasets:
+        duplicate_count = int(item["dataframe"].duplicated(subset=key_columns, keep=False).sum())
+        if duplicate_count > 0:
+            duplicate_messages.append(f"{item['name']}: {duplicate_count} duplicate key row(s)")
+
+    if duplicate_messages:
+        st.warning(
+            "Some files have repeated key values. Merge can create extra rows when duplicate keys match. "
+            + " | ".join(duplicate_messages)
+        )
+
+    combined_df, combine_info = merge_datasets_by_key(loaded_datasets, key_columns, merge_how)
+    show_compact_success(
+        f"Merged {len(loaded_datasets)} files using {', '.join(key_columns)}."
+    )
+
+    return combined_df, combine_info
+
+
 def build_local_contribution_table(shap_outputs, sample_index, top_n=6):
     X_explain = shap_outputs["X_explain"]
     shap_values = np.array(shap_outputs["shap_values"], dtype=float)
@@ -2575,7 +2752,7 @@ def show_download_section(target_column, report, results_df, problem_type,
         unsafe_allow_html=True
     )
 
-    dataset_filename = st.session_state.get("last_uploaded_filename")
+    dataset_filename = st.session_state.get("last_uploaded_display_name") or st.session_state.get("last_uploaded_filename")
     report_filename = build_report_filename(dataset_filename)
 
     try:
@@ -2626,23 +2803,38 @@ def show_download_section(target_column, report, results_df, problem_type,
         st.error(f"Word report could not be generated: {e}")
 
 
-uploaded_file = st.file_uploader(
+uploaded_files = st.file_uploader(
     "Upload your dataset",
     type=["csv", "xlsx", "xls", "tsv"],
-    help="Supported file types: CSV, XLSX, XLS, TSV."
+    accept_multiple_files=True,
+    help="Supported file types: CSV, XLSX, XLS, TSV. Upload multiple files to merge them by a shared ID column."
 )
 
-sync_uploaded_file_state(uploaded_file)
+sync_uploaded_file_state(uploaded_files)
 flush_pending_toast()
 completed_steps = get_completed_steps()
 show_stage_sidebar(completed_steps)
 install_sidebar_scroll_sync()
 show_step_progress(completed_steps)
 
-if uploaded_file is not None:
+if uploaded_files:
     try:
         show_section_header("Dataset Preview", "Check the raw rows, column count, and missing values before choosing what the model should predict.", anchor="dataset-preview")
-        df = load_dataset(uploaded_file)
+        loaded_datasets = load_uploaded_datasets(uploaded_files)
+
+        if len(loaded_datasets) == 1:
+            df = loaded_datasets[0]["dataframe"]
+            st.session_state["combined_dataset_info"] = {
+                "method": "Single file",
+                "source_files": [loaded_datasets[0]["name"]],
+            }
+        else:
+            df, combine_info = show_multi_file_combine_controls(loaded_datasets)
+
+            if df is None:
+                st.stop()
+
+            st.session_state["combined_dataset_info"] = combine_info
 
         preview_rows = st.selectbox(
             "How many rows would you like to preview?",

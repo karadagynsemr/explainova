@@ -5,6 +5,23 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
 
+TEXT_MISSING_VALUE_MARKERS = {
+    "",
+    "?",
+    "??",
+    "-",
+    "--",
+    "---",
+    "na",
+    "n/a",
+    "nan",
+    "null",
+    "none",
+    "missing",
+    "unknown",
+}
+
+
 def is_id_like_by_name(column_name):
     col = column_name.strip().lower()
 
@@ -100,7 +117,34 @@ def detect_id_like_columns(df):
     return detected
 
 
-def try_convert_object_to_numeric(df, target_column, conversion_threshold=0.80):
+def coerce_numeric_text(series):
+    cleaned = (
+        series
+        .astype("string")
+        .str.strip()
+        .str.replace("\u00a0", "", regex=False)
+        .str.replace(" ", "", regex=False)
+    )
+    missing_mask = cleaned.str.lower().isin(TEXT_MISSING_VALUE_MARKERS)
+    cleaned = cleaned.mask(missing_mask, pd.NA)
+
+    candidates = [
+        pd.to_numeric(cleaned, errors="coerce"),
+        pd.to_numeric(cleaned.str.replace(".", "", regex=False).str.replace(",", ".", regex=False), errors="coerce"),
+        pd.to_numeric(cleaned.str.replace(",", "", regex=False), errors="coerce"),
+    ]
+
+    non_null_count = int(cleaned.notnull().sum())
+    if non_null_count == 0:
+        return candidates[0], 0
+
+    ratios = [converted.notnull().sum() / non_null_count for converted in candidates]
+    best_idx = int(np.argmax(ratios))
+
+    return candidates[best_idx], ratios[best_idx]
+
+
+def try_convert_object_to_numeric(df, target_column=None, conversion_threshold=0.80):
     data = df.copy()
     converted_columns = []
 
@@ -110,15 +154,9 @@ def try_convert_object_to_numeric(df, target_column, conversion_threshold=0.80):
     ]
 
     for col in object_like_cols:
-        if col == target_column:
-            continue
+        converted, conversion_ratio = coerce_numeric_text(data[col])
 
-        converted = pd.to_numeric(data[col], errors="coerce")
-
-        original_non_null = data[col].notnull().sum()
-        converted_non_null = converted.notnull().sum()
-
-        if original_non_null > 0 and (converted_non_null / original_non_null) >= conversion_threshold:
+        if conversion_ratio >= conversion_threshold:
             data[col] = converted
             converted_columns.append(col)
 
@@ -136,24 +174,50 @@ def is_datetime_candidate(column_name):
     return any(keyword in col for keyword in datetime_keywords)
 
 
+def add_datetime_features(data, col, parsed):
+    data[f"{col}_year"] = parsed.dt.year
+    data[f"{col}_month"] = parsed.dt.month
+    data[f"{col}_day"] = parsed.dt.day
+    data[f"{col}_dayofweek"] = parsed.dt.dayofweek
+
+    created_features = [
+        f"{col}_year",
+        f"{col}_month",
+        f"{col}_day",
+        f"{col}_dayofweek"
+    ]
+
+    if parsed.dt.hour.nunique(dropna=True) > 1:
+        data[f"{col}_hour"] = parsed.dt.hour
+        created_features.append(f"{col}_hour")
+
+    return data.drop(columns=[col]), created_features
+
+
 def try_parse_datetime_columns(df, target_column, parse_threshold=0.80):
     data = df.copy()
 
     parsed_datetime_columns = []
     created_datetime_features = []
 
-    object_like_cols = [
-        col for col in data.columns
+    datetime_candidate_cols = [
+        col
+        for col in data.columns
         if (pd.api.types.is_object_dtype(data[col]) or pd.api.types.is_string_dtype(data[col]))
+        or pd.api.types.is_datetime64_any_dtype(data[col])
     ]
 
-    for col in object_like_cols:
+    for col in datetime_candidate_cols:
         if col == target_column:
             continue
 
-        should_try = is_datetime_candidate(col)
+        is_native_datetime = pd.api.types.is_datetime64_any_dtype(data[col])
+        should_try = is_native_datetime or is_datetime_candidate(col)
 
-        parsed = pd.to_datetime(data[col], errors="coerce")
+        if not should_try:
+            continue
+
+        parsed = data[col] if is_native_datetime else pd.to_datetime(data[col], errors="coerce")
 
         original_non_null = data[col].notnull().sum()
         parsed_non_null = parsed.notnull().sum()
@@ -163,24 +227,9 @@ def try_parse_datetime_columns(df, target_column, parse_threshold=0.80):
 
         parse_ratio = parsed_non_null / original_non_null
 
-        if should_try and parse_ratio >= parse_threshold:
-            data[f"{col}_year"] = parsed.dt.year
-            data[f"{col}_month"] = parsed.dt.month
-            data[f"{col}_day"] = parsed.dt.day
-            data[f"{col}_dayofweek"] = parsed.dt.dayofweek
-
-            created_datetime_features.extend([
-                f"{col}_year",
-                f"{col}_month",
-                f"{col}_day",
-                f"{col}_dayofweek"
-            ])
-
-            if parsed.dt.hour.nunique(dropna=True) > 1:
-                data[f"{col}_hour"] = parsed.dt.hour
-                created_datetime_features.append(f"{col}_hour")
-
-            data = data.drop(columns=[col])
+        if parse_ratio >= parse_threshold:
+            data, current_features = add_datetime_features(data, col, parsed)
+            created_datetime_features.extend(current_features)
             parsed_datetime_columns.append(col)
 
     return data, parsed_datetime_columns, created_datetime_features
