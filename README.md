@@ -106,6 +106,9 @@ Explainova also includes PDP/ICE analysis to show how model predictions change w
 
 > Note: Explainability outputs describe model behavior, not real-world causality.
 
+Developers :
+Şeyda Nur Sert
+Yunus Emre Karadağ
 
 ## Installation
 
@@ -119,4 +122,3 @@ source venv/bin/activate
 pip install -r requirements.txt
 streamlit run app.py
 
-Şeyda Nur Sert Yunus Emre Karadağ
