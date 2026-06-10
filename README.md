@@ -118,3 +118,5 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 streamlit run app.py
+
+Şeyda Nur Sert Yunus Emre Karadağ
